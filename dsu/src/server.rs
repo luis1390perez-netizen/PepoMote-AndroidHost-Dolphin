@@ -5,10 +5,9 @@
 //! PadData, ~1/s). El streaming de PadData sale inline del hilo de telemetría
 //! (dsu::Dsu::push) para no añadir latencia.
 
-use super::{mapping, Client, Clients, DsuProfile, MotionSample, SlotSamples};
-use crate::net::MAX_PLAYERS;
-use crate::state::SharedState;
+use super::{mapping, Client, ClientCount, Clients, DsuProfile, MotionSample, SlotSamples, MAX_PLAYERS};
 use std::net::UdpSocket;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 pub const DSU_PORT: u16 = 26760;
@@ -57,7 +56,7 @@ fn subscribed_slots(payload: &[u8]) -> u8 {
     mask
 }
 
-pub fn run(shared: SharedState, socket: UdpSocket, clients: Clients, last: SlotSamples) {
+pub fn run(socket: UdpSocket, clients: Clients, last: SlotSamples, count: ClientCount) {
     let _ = socket.set_read_timeout(Some(Duration::from_millis(250)));
     let mut buf = [0u8; 128];
     let mut last_sweep = Instant::now();
@@ -116,7 +115,7 @@ pub fn run(shared: SharedState, socket: UdpSocket, clients: Clients, last: SlotS
             last_sweep = Instant::now();
             let mut c = clients.lock().unwrap();
             c.retain(|_, cl| cl.last_seen.elapsed() < CLIENT_TTL);
-            shared.lock().unwrap().dsu_clients = c.len();
+            count.store(c.len(), Ordering::Relaxed);
         }
     }
 }

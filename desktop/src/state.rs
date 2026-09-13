@@ -380,7 +380,6 @@ pub struct Shared {
     pub sensor_hz: f32,
     /// RTT (ms) de los últimos latidos del Jugador 1 (sparkline).
     pub rtt_hist: std::collections::VecDeque<f32>,
-    pub dsu_clients: usize,
     /// Resultado del último intento de configurar Dolphin (para la UI).
     pub dolphin_cfg_status: Option<CfgStatus>,
     /// El emulador estaba abierto: se configurará en cuanto se cierre.
@@ -432,7 +431,6 @@ impl Shared {
             pps: 0.0,
             sensor_hz: 0.0,
             rtt_hist: std::collections::VecDeque::with_capacity(RTT_HIST),
-            dsu_clients: 0,
             dolphin_cfg_status: None,
             dolphin_pending: false,
             cemu_pending: false,

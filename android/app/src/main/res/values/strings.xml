@@ -136,4 +136,27 @@
     <string name="kb_write">Escribir</string>
     <string name="kb_close">Cerrar</string>
     <string name="kb_accept">Aceptar</string>
+
+    <!-- Dolphin en Android: este móvil sirve DSU a un Dolphin de otro dispositivo -->
+    <string name="dsu_card_title">Dolphin en Android</string>
+    <string name="dsu_card_desc">Sin PC: Dolphin en otra tablet o móvil y este de mando</string>
+    <string name="dsu_title">Dolphin en Android</string>
+    <string name="dsu_serving">Sirviendo en %1$s:%2$d</string>
+    <string name="dsu_no_ip">Sin Wi-Fi. Conecta este móvil a la misma red que el dispositivo con Dolphin (o comparte Internet desde aquí).</string>
+    <string name="dsu_waiting">Esperando a Dolphin…</string>
+    <string name="dsu_connected">Dolphin conectado (%1$d)</string>
+    <string name="dsu_notif_serving">Esperando a Dolphin…</string>
+    <string name="dsu_notif_connected">Dolphin conectado</string>
+    <string name="dsu_start">Empezar a mandar</string>
+    <string name="dsu_stop">Parar</string>
+    <string name="dsu_play">Abrir el mando</string>
+    <string name="dsu_error">No se pudo abrir el puerto: %1$s</string>
+    <string name="dsu_setup_title">Configurar Dolphin (solo la primera vez)</string>
+    <string name="dsu_setup_intro">Dolphin para Android no tiene dónde activar esto desde su pantalla de ajustes, así que hay que dejarle dos archivos. Copia cada uno en esta carpeta del dispositivo donde corre Dolphin, con un explorador de archivos que llegue a Android/data (ZArchiver, MiXplorer) o por adb:</string>
+    <string name="dsu_setup_path">/storage/emulated/0/Android/data/org.dolphinemu.dolphinemu/files/Config/</string>
+    <string name="dsu_setup_then">Después, en Dolphin: Mando → Mando de Wii 1 → Emulado. En la lista de dispositivos tiene que salir DSUClient/0/PepoMote.</string>
+    <string name="dsu_ip_warning">La IP de este móvil está escrita dentro de DSUClient.ini. Si cambia (al reiniciar el router, por ejemplo), hay que volver a copiarlo. Para que no cambie nunca: reserva la IP en el router, o comparte Internet desde este móvil y conecta el otro dispositivo a él.</string>
+    <string name="dsu_copy">Copiar</string>
+    <string name="dsu_share">Compartir</string>
+    <string name="dsu_copied">Copiado</string>
 </resources>

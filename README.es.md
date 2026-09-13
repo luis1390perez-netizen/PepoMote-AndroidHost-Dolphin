@@ -33,6 +33,8 @@
 
 Mira [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md) — dos minutos de configuración de Dolphin una sola vez (servidor DSU + perfil de mando incluido), y después: apunta a la pantalla, mantén la diana para recentrar, balancea para lanzar la bola.
 
+**¿Sin PC?** Dolphin puede correr en otro Android: toca **Dolphin en Android** y el móvil le sirve DSU directamente por Wi-Fi — sin receptor, sin emparejar y sin instalar nada en el otro dispositivo. Un Mando de Wii emulado con movimiento completo; mira [docs/DOLPHIN-ANDROID.md](docs/DOLPHIN-ANDROID.md).
+
 ## Jugar a la Wii U
 
 Mira [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — toca **Wii U** en la app, sostén el móvil apaisado y abre Cemu. Nada que configurar: PepoMote escribe el perfil de mando de Cemu (GamePad desde el pad DSU de tu móvil, con movimiento y táctil) con Cemu cerrado.

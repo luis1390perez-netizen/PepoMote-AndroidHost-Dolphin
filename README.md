@@ -33,6 +33,8 @@
 
 See [docs/SETUP-DOLPHIN.md](docs/SETUP-DOLPHIN.md) — two minutes of one-time Dolphin setup (DSU server + bundled controller profile), then: aim at the screen to point, hold the target button to recenter, swing to bowl.
 
+**No PC?** Dolphin can run on a second Android device: tap **Dolphin on Android** and the phone serves DSU straight to it over Wi-Fi — no receiver, no pairing, nothing to install on the other device. One emulated Wii Remote with full motion; see [docs/DOLPHIN-ANDROID.md](docs/DOLPHIN-ANDROID.md).
+
 ## Play Wii U games
 
 See [docs/SETUP-CEMU.md](docs/SETUP-CEMU.md) — tap **Wii U** in the app, hold the phone sideways, open Cemu. Nothing to configure: PepoMote writes Cemu's controller profile (GamePad from your phone's DSU pad, motion and touch included) while Cemu is closed.

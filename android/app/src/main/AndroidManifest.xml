@@ -59,6 +59,13 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
+        <!-- Modo «Dolphin en Android»: este móvil sirve DSU a un Dolphin de otro
+             dispositivo. Mismo tipo que el enlace: hay un aparato al otro lado. -->
+        <service
+            android:name=".service.DsuForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
         <!-- Tile de Ajustes rápidos: estado del enlace y conectar/desconectar sin abrir la app -->
         <service
             android:name=".service.PepoTileService"

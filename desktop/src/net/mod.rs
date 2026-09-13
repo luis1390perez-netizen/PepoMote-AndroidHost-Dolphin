@@ -13,8 +13,9 @@ use std::collections::HashMap;
 use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Mutex, OnceLock};
 
-/// Límite del protocolo DSU: 4 mandos.
-pub const MAX_PLAYERS: usize = 4;
+/// Límite del protocolo DSU: 4 mandos. Lo define el crate del servidor DSU,
+/// que es de donde sale el límite.
+pub use dsu_server::MAX_PLAYERS;
 
 /// Sesión de un móvil. La crea el canal de control; la consume telemetría.
 pub struct Session {

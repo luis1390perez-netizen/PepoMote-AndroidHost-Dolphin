@@ -1,0 +1,14 @@
+[package]
+name = "dsu"
+version = "1.5.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "DSU (cemuhook) server for PepoMote — shared by the PC receiver and the Android sender"
+repository = "https://github.com/pepitolas13/PepoMote"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+pmp = { path = "../pmp" }
+crc32fast = "1"

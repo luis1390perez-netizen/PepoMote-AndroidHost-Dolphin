@@ -114,7 +114,7 @@ impl eframe::App for PepoMoteApp {
                 pps: s.pps,
                 sensor_hz: s.sensor_hz,
                 rtt_hist: s.rtt_hist.iter().copied().collect(),
-                dsu_clients: s.dsu_clients,
+                dsu_clients: crate::dsu::client_count(),
                 dolphin_status: s.dolphin_cfg_status.clone(),
                 cemu_status: s.cemu_cfg_status.clone(),
                 cemu_screen: s.cemu_screen_status.clone(),

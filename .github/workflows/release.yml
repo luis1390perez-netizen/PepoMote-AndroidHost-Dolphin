@@ -100,6 +100,15 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
+      # El APK lleva el servidor DSU nativo (modo «Dolphin en Android»), que
+      # Gradle compila con cargo-ndk: sin esto el .so no entra en el APK.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - name: cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: NDK
+        run: echo "ANDROID_NDK_HOME=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
       - name: Restore keystore from secrets
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}

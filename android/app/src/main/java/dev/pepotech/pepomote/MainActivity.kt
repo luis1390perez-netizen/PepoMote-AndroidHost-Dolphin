@@ -40,6 +40,8 @@ import dev.pepotech.pepomote.control.LocaleHelper
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.net.Pairing
+import dev.pepotech.pepomote.service.DsuForegroundService
+import dev.pepotech.pepomote.service.DsuState
 import dev.pepotech.pepomote.service.LinkFailure
 import dev.pepotech.pepomote.service.LaunchAction
 import dev.pepotech.pepomote.service.LinkForegroundService
@@ -53,6 +55,7 @@ import dev.pepotech.pepomote.ui.screens.HomeStatus
 import dev.pepotech.pepomote.ui.screens.HomeTone
 import dev.pepotech.pepomote.ui.screens.ControllerLandscapeScreen
 import dev.pepotech.pepomote.ui.screens.ControllerScreen
+import dev.pepotech.pepomote.ui.screens.DolphinAndroidScreen
 import dev.pepotech.pepomote.ui.screens.GamePadScreen
 import dev.pepotech.pepomote.ui.screens.HomeScreen
 import dev.pepotech.pepomote.ui.screens.NunchukScreen
@@ -66,7 +69,7 @@ import dev.pepotech.pepomote.ui.theme.PepoMoteTheme
  * layouts Wii o Nunchuk) la decide [Route] a partir del enlace y de la
  * intención pendiente del usuario.
  */
-internal enum class Screen { Onboarding, Home, Pair, Controller, Nunchuk, Settings }
+internal enum class Screen { Onboarding, Home, Pair, Controller, Nunchuk, Settings, DolphinAndroid, DsuController }
 
 class MainActivity : ComponentActivity() {
 
@@ -425,9 +428,26 @@ private fun Root(activity: MainActivity) {
                 onDolphin = { activity.openController(LinkState.MODE_DOLPHIN, dolphinOnly = true) },
                 onWiiU = { activity.openController(LinkState.MODE_CEMU, dolphinOnly = false) },
                 onNunchuk = { activity.openNunchuk() },
+                onDsu = { activity.currentScreen = Screen.DolphinAndroid },
                 onNewPairing = { activity.currentScreen = Screen.Settings }
             )
         }
+
+        // Sin PC: este móvil sirve DSU y Dolphin corre en otro dispositivo.
+        // No pasa por el enlace PMP, así que no toca `link` para nada.
+        Screen.DolphinAndroid -> DolphinAndroidScreen(
+            onPlay = {
+                // Sin PC no hay chips de modo que enseñar: esto es Dolphin y
+                // solo Dolphin
+                activity.controllerDolphinOnly = true
+                activity.currentScreen = Screen.DsuController
+            },
+            onStart = { DsuForegroundService.start(context) },
+            onStop = { DsuForegroundService.stop(context) },
+            onBack = { activity.currentScreen = Screen.Home }
+        )
+
+        Screen.DsuController -> DsuControllerRoute(activity)
 
         Screen.Pair -> {
             val saved = remember(activity.pairVersion) { PairStore.all(context) }
@@ -477,6 +497,47 @@ private fun screenTransition(from: Screen, to: Screen): ContentTransform {
     val enter = fadeIn(tween(180)) + slideInHorizontally(tween(180)) { w -> if (forward) w / 12 else -w / 12 }
     val exit = fadeOut(tween(120)) + slideOutHorizontally(tween(120)) { w -> if (forward) -w / 12 else w / 12 }
     return enter togetherWith exit
+}
+
+/**
+ * El mando del modo «Dolphin en Android»: los MISMOS layouts Wii de siempre,
+ * porque los botones escriben en [ButtonState] y de ahí los lee el motor de
+ * sensores, venga el destino de la red o del servidor DSU de aquí dentro.
+ *
+ * El enlace que se les pasa es sintético: no hay sesión PMP ni PC, pero sí
+ * hay un destino vivo, así que la pantalla lo pinta como conectado. El
+ * nombre es la IP a la que apunta Dolphin, que es lo que le sirve al usuario
+ * de un vistazo.
+ */
+@Composable
+private fun DsuControllerRoute(activity: MainActivity) {
+    val context = LocalContext.current
+    val state by DsuState.flow.collectAsState()
+    val serving = state as? DsuState.Ui.Serving
+
+    val link = UiLink.Connected(
+        pcName = serving?.ip ?: stringResource(R.string.dsu_card_title),
+        mode = LinkState.MODE_DOLPHIN,
+        rttMs = null,
+        sensorHz = 0f,
+        slot = 0,
+        role = LinkState.ROLE_WIIMOTE,
+        player = 1,
+        supportsCemu = false,
+        pad = LinkState.PAD_WIIMOTE
+    )
+
+    val onDisconnect = {
+        DsuForegroundService.stop(context)
+        activity.currentScreen = Screen.DolphinAndroid
+    }
+
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    if (landscape) {
+        ControllerLandscapeScreen(link = link, showChips = false, onDisconnect = onDisconnect)
+    } else {
+        ControllerScreen(link = link, showChips = false, onDisconnect = onDisconnect)
+    }
 }
 
 /**

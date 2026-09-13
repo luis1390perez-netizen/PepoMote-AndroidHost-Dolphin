@@ -136,4 +136,27 @@
     <string name="kb_write">Type</string>
     <string name="kb_close">Close</string>
     <string name="kb_accept">Accept</string>
+
+    <!-- Dolphin on Android: this phone serves DSU to a Dolphin on another device -->
+    <string name="dsu_card_title">Dolphin on Android</string>
+    <string name="dsu_card_desc">No PC: Dolphin on another tablet or phone, this one as the controller</string>
+    <string name="dsu_title">Dolphin on Android</string>
+    <string name="dsu_serving">Serving on %1$s:%2$d</string>
+    <string name="dsu_no_ip">No Wi-Fi. Connect this phone to the same network as the device running Dolphin (or share Internet from here).</string>
+    <string name="dsu_waiting">Waiting for Dolphin…</string>
+    <string name="dsu_connected">Dolphin connected (%1$d)</string>
+    <string name="dsu_notif_serving">Waiting for Dolphin…</string>
+    <string name="dsu_notif_connected">Dolphin connected</string>
+    <string name="dsu_start">Start sending</string>
+    <string name="dsu_stop">Stop</string>
+    <string name="dsu_play">Open the controller</string>
+    <string name="dsu_error">Could not open the port: %1$s</string>
+    <string name="dsu_setup_title">Set up Dolphin (first time only)</string>
+    <string name="dsu_setup_intro">Dolphin for Android has no way to turn this on from its settings screen, so it needs two files. Copy each one into this folder on the device running Dolphin, using a file manager that can reach Android/data (ZArchiver, MiXplorer) or with adb:</string>
+    <string name="dsu_setup_path">/storage/emulated/0/Android/data/org.dolphinemu.dolphinemu/files/Config/</string>
+    <string name="dsu_setup_then">Then, in Dolphin: Controllers → Wii Remote 1 → Emulated. DSUClient/0/PepoMote must show up in the device list.</string>
+    <string name="dsu_ip_warning">This phone\'s IP is written inside DSUClient.ini. If it changes (after a router restart, say), copy the file again. To keep it from ever changing: reserve the IP on the router, or share Internet from this phone and connect the other device to it.</string>
+    <string name="dsu_copy">Copy</string>
+    <string name="dsu_share">Share</string>
+    <string name="dsu_copied">Copied</string>
 </resources>

@@ -1,0 +1,25 @@
+[package]
+name = "dsu-android"
+version = "1.5.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "JNI bridge: the PepoMote DSU server inside the Android app, serving Dolphin on another device"
+repository = "https://github.com/pepitolas13/PepoMote"
+
+[lib]
+name = "pepomote_dsu"
+crate-type = ["cdylib"]
+
+[dependencies]
+dsu = { path = "../dsu" }
+pmp = { path = "../pmp" }
+jni = "0.21"
+
+# Sin `panic = "abort"` explícito: un `extern "C"` que desenrolla ya aborta
+# desde Rust 1.71, y aquí no hay nada que pueda entrar en pánico con la
+# entrada del móvil (el códec devuelve Option, no se desenvuelve nada).
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

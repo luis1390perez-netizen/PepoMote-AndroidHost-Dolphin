@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -15,6 +16,48 @@ val keystoreProps = Properties().apply {
 
 fun signingValue(prop: String, env: String): String? =
     keystoreProps.getProperty(prop) ?: System.getenv(env)
+
+// Servidor DSU nativo (crate `dsu-android` → libpepomote_dsu.so): el mismo
+// código Rust que sirve DSU en el PC, aquí dentro de la app para que Dolphin
+// —en OTRO dispositivo— lea de este móvil. Se compila con cargo-ndk:
+//   cargo install cargo-ndk && rustup target add aarch64-linux-android …
+// Sin la toolchain de Rust el resto de la app sigue compilando: la tarea
+// avisa y se salta, y solo falla al ejecutar el modo «Dolphin en Android».
+// ABIs de Android (cargo-ndk traduce cada una a su triple de Rust).
+// arm64-v8a es el móvil de hoy; armeabi-v7a, los viejos; x86_64, el emulador.
+val rustAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+val isWindows = System.getProperty("os.name").startsWith("Windows")
+val cargoExe = if (isWindows) "cargo.exe" else "cargo"
+
+fun cargoOnPath(): Boolean =
+    System.getenv("PATH")?.split(File.pathSeparator)?.any { File(it, cargoExe).exists() } ?: false
+
+val cargoNdk = tasks.register<Exec>("cargoNdkBuild") {
+    group = "build"
+    description = "Compila el servidor DSU nativo en app/src/main/jniLibs"
+    workingDir = rootProject.file("../dsu-android")
+    commandLine(
+        buildList {
+            add(cargoExe)
+            add("ndk")
+            rustAbis.forEach { addAll(listOf("-t", it)) }
+            // minSdk 26: la API contra la que se enlaza el .so
+            addAll(listOf("--platform", "26"))
+            addAll(listOf("-o", file("src/main/jniLibs").absolutePath))
+            addAll(listOf("build", "--release"))
+        }
+    )
+
+    // Sin la toolchain de Rust el resto de la app sigue compilando: se avisa
+    // y se salta. Solo falla al ENTRAR en el modo «Dolphin en Android».
+    onlyIf {
+        val found = cargoOnPath()
+        if (!found) logger.warn("cargo no está en el PATH: sin servidor DSU nativo (ver docs/DOLPHIN-ANDROID.md)")
+        found
+    }
+}
+
+tasks.named("preBuild") { dependsOn(cargoNdk) }
 
 android {
     namespace = "dev.pepotech.pepomote"

@@ -49,6 +49,7 @@ fun HomeScreen(
     onDolphin: () -> Unit,
     onWiiU: () -> Unit,
     onNunchuk: () -> Unit,
+    onDsu: () -> Unit,
     onNewPairing: () -> Unit
 ) {
     Column(
@@ -148,6 +149,17 @@ fun HomeScreen(
                     glyph = ChannelGlyph.Stick,
                     accent = PepoColors.Ok,
                     onClick = onNunchuk
+                )
+            }
+            // Sin PC: Dolphin corre en otro Android y este móvil le sirve DSU
+            // directamente. No hace falta emparejar nada.
+            item {
+                ChannelCard(
+                    title = stringResource(R.string.dsu_card_title),
+                    subtitle = stringResource(R.string.dsu_card_desc),
+                    glyph = ChannelGlyph.Pad,
+                    accent = PepoColors.Ok,
+                    onClick = onDsu
                 )
             }
             item {

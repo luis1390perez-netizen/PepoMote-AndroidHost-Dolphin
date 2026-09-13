@@ -1,6 +1,8 @@
 # Rust
 desktop/target/
 pmp/target/
+dsu/target/
+dsu-android/target/
 mobile-linux/target/
 
 # Android / Gradle
@@ -9,6 +11,8 @@ android/build/
 android/app/build/
 android/local.properties
 android/.kotlin/
+# Servidor DSU nativo: lo compila cargo-ndk en cada build
+android/app/src/main/jniLibs/
 *.iml
 .idea/
 

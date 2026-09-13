@@ -15,6 +15,9 @@ winresource = "0.1"
 
 [dependencies]
 pmp = { path = "../pmp" }
+# Servidor DSU, compartido con el emisor de Android (que lo sirve a un Dolphin
+# de otro dispositivo). Con alias: `crate::dsu` es el adaptador del receptor.
+dsu_server = { path = "../dsu", package = "dsu" }
 eframe = "0.29"
 egui = "0.29"
 qrcode = { version = "0.14", default-features = false }

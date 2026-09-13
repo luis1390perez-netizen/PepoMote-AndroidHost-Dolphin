@@ -36,6 +36,14 @@ en el entorno:
   el receptor NORMAL (token real por `PEPOMOTE_TOKEN`), para ver en Cemu el
   mando moviéndose. Un archivo `cemu_live.cmd` junto al script cambia el patrón.
 
+Contra un servidor DSU cualquiera (no hace falta receptor de pruebas ni
+Dolphin): `python dsu_probe.py <host> [puerto]` es un cliente DSU con la
+misma forma que el de Dolphin — pide versión y PortInfo, se suscribe a un pad
+y saca por pantalla cada PadData (accel, gyro, botones). Es la manera de
+saber si el problema está en el servidor o en la configuración de Dolphin.
+Vale también para el modo «Dolphin en Android», apuntando a la IP del móvil:
+`python dsu_probe.py 192.168.1.42` (ver `docs/DOLPHIN-ANDROID.md`).
+
 Linux, compositor wlroots de verdad (lo que corre la CI en `desktop.yml`):
 `bash desktop/e2e/e2e_wayland.sh` arranca un `sway` sin cabeza
 (`WLR_BACKENDS=headless`, sin GPU) con `wev` a pantalla completa, un

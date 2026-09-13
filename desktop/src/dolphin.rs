@@ -15,69 +15,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use crate::state::CfgStatus;
 use crate::tr;
+// El mapeo del mando emulado y el del Nunchuk: los comparte con el emisor de
+// Android, que enseña estos mismos INI al usuario porque allí no se pueden
+// escribir (almacenamiento privado de la app de Dolphin). Ver protocol/DSU.md.
+use dsu_server::ini;
 
 /// Dos móviles conectando a la vez disparan dos configuraciones: en serie,
 /// o se pisan el leer-modificar-escribir del mismo INI.
 static CONFIGURE_LOCK: Mutex<()> = Mutex::new(());
 
-/// Mapeo validado contra Dolphin real (h3): botones por bytes analógicos,
-/// cruceta "Pad N/S/W/E", IMU completo y recentrado por botón Touch.
-/// {DEV} = índice de pad del cliente DSU (slot).
-const MAPPING: &str = "Device = DSUClient/{DEV}/PepoMote
-Source = 1
-Buttons/A = Cross
-Buttons/B = Circle
-Buttons/1 = Square
-Buttons/2 = Triangle
-Buttons/- = Share
-Buttons/+ = Options
-Buttons/Home = PS
-D-Pad/Up = `Pad N`
-D-Pad/Down = `Pad S`
-D-Pad/Left = `Pad W`
-D-Pad/Right = `Pad E`
-IMUAccelerometer/Up = `Accel Up`
-IMUAccelerometer/Down = `Accel Down`
-IMUAccelerometer/Left = `Accel Left`
-IMUAccelerometer/Right = `Accel Right`
-IMUAccelerometer/Forward = `Accel Forward`
-IMUAccelerometer/Backward = `Accel Backward`
-IMUGyroscope/Pitch Up = `Gyro Pitch Up`
-IMUGyroscope/Pitch Down = `Gyro Pitch Down`
-IMUGyroscope/Roll Left = `Gyro Roll Left`
-IMUGyroscope/Roll Right = `Gyro Roll Right`
-IMUGyroscope/Yaw Left = `Gyro Yaw Left`
-IMUGyroscope/Yaw Right = `Gyro Yaw Right`
-IMUGyroscope/Dead Zone = 3.
-IMUPointer/Enabled = True
-IMUPointer/Recenter = `Touch Button`
-IMUPointer/Total Yaw = 25.000000000000000
-IMUPointer/Total Pitch = 20.000000000000000
-Options/Battery = `Battery`
-";
-
-/// Nunchuk emulado alimentado por el pad DSU del OTRO móvil ({NDEV} = su
-/// slot): stick, C/Z (Cross/Circle de ese pad) y su acelerómetro real
-/// (Dolphin lo usa tal cual para agitar/inclinar). Ver protocol/DSU.md.
-const NUNCHUK_MAPPING: &str = "Extension = Nunchuk
-Nunchuk/Buttons/C = `DSUClient/{NDEV}/PepoMote:Cross`
-Nunchuk/Buttons/Z = `DSUClient/{NDEV}/PepoMote:Circle`
-Nunchuk/Stick/Up = `DSUClient/{NDEV}/PepoMote:Left Y+`
-Nunchuk/Stick/Down = `DSUClient/{NDEV}/PepoMote:Left Y-`
-Nunchuk/Stick/Left = `DSUClient/{NDEV}/PepoMote:Left X-`
-Nunchuk/Stick/Right = `DSUClient/{NDEV}/PepoMote:Left X+`
-Nunchuk/IMUAccelerometer/Up = `DSUClient/{NDEV}/PepoMote:Accel Up`
-Nunchuk/IMUAccelerometer/Down = `DSUClient/{NDEV}/PepoMote:Accel Down`
-Nunchuk/IMUAccelerometer/Left = `DSUClient/{NDEV}/PepoMote:Accel Left`
-Nunchuk/IMUAccelerometer/Right = `DSUClient/{NDEV}/PepoMote:Accel Right`
-Nunchuk/IMUAccelerometer/Forward = `DSUClient/{NDEV}/PepoMote:Accel Forward`
-Nunchuk/IMUAccelerometer/Backward = `DSUClient/{NDEV}/PepoMote:Accel Backward`
-";
-
 /// Jugadores a configurar: (slot DSU del Wiimote, slot DSU de su Nunchuk).
 pub type Layout = [(u8, Option<u8>)];
-
-const DSU_ENTRY: &str = "PepoMote:127.0.0.1:26760";
 
 // ---------------------------------------------------------------------------
 // Dónde guarda Dolphin su configuración (la misma lógica que Dolphin)
@@ -619,13 +567,9 @@ pub fn write_wiimotes(cfg_dir: &Path, layout: &Layout) -> Result<(), String> {
     let mut ini = parse_ini(&original);
     let n = layout.len().min(crate::net::MAX_PLAYERS);
     for (i, (wslot, nslot)) in layout.iter().take(n).enumerate() {
-        let mut body: Vec<String> = MAPPING
-            .replace("{DEV}", &wslot.to_string())
-            .lines()
-            .map(|l| l.to_owned())
-            .collect();
+        let mut body: Vec<String> = ini::wiimote_mapping(*wslot).lines().map(|l| l.to_owned()).collect();
         match nslot {
-            Some(ns) => body.extend(NUNCHUK_MAPPING.replace("{NDEV}", &ns.to_string()).lines().map(|l| l.to_owned())),
+            Some(ns) => body.extend(ini::nunchuk_mapping(*ns).lines().map(|l| l.to_owned())),
             None => body.push("Extension = None".to_owned()),
         }
         set_section(&mut ini, &format!("Wiimote{}", i + 1), body);
@@ -673,11 +617,13 @@ pub fn ensure_dsu_server(cfg_dir: &Path) -> Result<(), String> {
             }
         }
     }
-    if !entries.contains(DSU_ENTRY) {
+    // Dolphin corre en esta máquina: el servidor está en el loopback
+    let entry = ini::dsu_entry("127.0.0.1", dsu_server::DSU_PORT);
+    if !entries.contains(&entry) {
         if !entries.is_empty() && !entries.ends_with(';') {
             entries.push(';');
         }
-        entries.push_str(DSU_ENTRY);
+        entries.push_str(&entry);
         entries.push(';');
     }
     let mut body = vec![
@@ -696,8 +642,7 @@ fn write_profiles(cfg_dir: &Path, n_players: usize) {
         return;
     }
     for slot in 0..n_players.min(crate::net::MAX_PLAYERS) {
-        let body: String = MAPPING
-            .replace("{DEV}", &slot.to_string())
+        let body: String = ini::wiimote_mapping(slot as u8)
             .lines()
             .filter(|l| !l.starts_with("Source"))
             .fold(String::from("[Profile]\n"), |mut acc, l| {
