@@ -366,14 +366,21 @@ git commit -m "JNI: los INI se piden con la lista de moviles de la party"
      */
     fun dsuClientIni(hosts: List<String>): String =
         if (available && hosts.isNotEmpty()) {
-            nativeDsuClientIni(hosts.joinToString(","), PORT) ?: MISSING_LIB
+            nativeDsuClientIni(hosts.joinToString(","), PORT).orEmpty()
         } else {
-            MISSING_LIB
+            ""
         }
 
     /** El WiimoteNew.ini con un mando por jugador de la party. */
     fun wiimoteIni(players: Int): String =
-        if (available) nativeWiimoteIni(players.coerceAtLeast(1)) ?: MISSING_LIB else MISSING_LIB
+        if (available) nativeWiimoteIni(players.coerceAtLeast(1)).orEmpty() else ""
+
+// NO devuelvas MISSING_LIB aqui. Lo que sale de estas dos funciones es el
+// CONTENIDO de un fichero: la pantalla lo pinta como tal y el boton Compartir
+// lo escribe dentro de un archivo llamado DSUClient.ini. Un mensaje de error
+// ahi acabaria copiado en la carpeta de Dolphin haciendose pasar por
+// configuracion. MISSING_LIB sigue estando bien en start(), donde el valor de
+// retorno si es un error por contrato.
 ```
 
 - [ ] **Step 2: Adaptar las dos llamadas de la pantalla, sin UI nueva todavía**
