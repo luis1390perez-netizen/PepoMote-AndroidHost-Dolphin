@@ -37,8 +37,8 @@ object DsuServer {
     private external fun nativeStart(bind: String, port: Int): String?
     private external fun nativePush(packet: ByteArray)
     private external fun nativeClients(): Int
-    private external fun nativeDsuClientIni(host: String, port: Int): String?
-    private external fun nativeWiimoteIni(): String?
+    private external fun nativeDsuClientIni(hosts: String, port: Int): String?
+    private external fun nativeWiimoteIni(count: Int): String?
 
     /**
      * Abre el puerto si no estaba abierto. `0.0.0.0` y no el loopback: quien
@@ -60,12 +60,21 @@ object DsuServer {
      */
     fun clients(): Int = if (available) nativeClients() else 0
 
-    /** El `DSUClient.ini` que hay que dejarle a Dolphin, con esta IP. */
-    fun dsuClientIni(host: String, port: Int = PORT): String =
-        if (available) nativeDsuClientIni(host, port).orEmpty() else ""
+    /**
+     * El DSUClient.ini con un servidor por móvil de la party, en orden de
+     * jugador: el primero es el anfitrión. Los nombres (`PepoMote-P1`…) los
+     * pone el lado Rust, que es también quien escribe el WiimoteNew.ini.
+     */
+    fun dsuClientIni(hosts: List<String>): String =
+        if (available && hosts.isNotEmpty()) {
+            nativeDsuClientIni(hosts.joinToString(","), PORT) ?: MISSING_LIB
+        } else {
+            MISSING_LIB
+        }
 
-    /** El `WiimoteNew.ini` con el Mando de Wii emulado del Jugador 1. */
-    fun wiimoteIni(): String = if (available) nativeWiimoteIni().orEmpty() else ""
+    /** El WiimoteNew.ini con un mando por jugador de la party. */
+    fun wiimoteIni(players: Int): String =
+        if (available) nativeWiimoteIni(players.coerceAtLeast(1)) ?: MISSING_LIB else MISSING_LIB
 
     private const val MISSING_LIB =
         "Esta compilación no lleva el servidor DSU nativo (falta libpepomote_dsu.so)"

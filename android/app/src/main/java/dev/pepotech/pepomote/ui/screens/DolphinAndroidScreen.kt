@@ -127,11 +127,11 @@ fun DolphinAndroidScreen(
         Spacer(Modifier.height(16.dp))
         FileCard(
             name = "DSUClient.ini",
-            body = DsuServer.dsuClientIni(ip ?: "0.0.0.0"),
+            body = DsuServer.dsuClientIni(listOf(ip ?: "0.0.0.0")),
             context = context
         )
         Spacer(Modifier.height(12.dp))
-        FileCard(name = "WiimoteNew.ini", body = DsuServer.wiimoteIni(), context = context)
+        FileCard(name = "WiimoteNew.ini", body = DsuServer.wiimoteIni(1), context = context)
 
         Spacer(Modifier.height(16.dp))
         Text(stringResource(R.string.dsu_setup_then), style = MaterialTheme.typography.bodyMedium)
