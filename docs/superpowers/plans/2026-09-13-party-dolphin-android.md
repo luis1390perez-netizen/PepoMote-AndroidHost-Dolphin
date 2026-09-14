@@ -409,7 +409,17 @@ git commit -m "android: los INI se piden con la lista de moviles"
 
 ### Task 5: `PartyRoster` — quién juega y con qué número
 
-Lógica pura, sin red: así se puede probar de verdad. El anfitrión **no** está en el roster (no se une por socket); es siempre P1 y quien genere los INI antepone su IP.
+Lógica pura, sin red: así se puede probar de verdad. El anfitrión **no** está en
+el roster (no se une por socket); es siempre P1 y quien genere los INI antepone
+su IP.
+
+**El número de jugador es POSICIONAL**: el invitado n-ésimo en orden de llegada
+es el Jugador n+2, recalculado en cada consulta. Es obligatorio que sea así
+porque `dsu_client_ini` reparte los nombres `PepoMote-P<n>` por posición
+(`dsu/src/ini.rs`, `enumerate()`): si el roster repartiera «primer hueco libre»,
+en cuanto se fuera un invitado la etiqueta de la pantalla y el nombre del INI
+dirían cosas distintas, y esa etiqueta es justo con lo que el usuario depura
+cuando un mando no responde.
 
 **Files:**
 - Create: `android/app/src/main/java/dev/pepotech/pepomote/net/PartyRoster.kt`
@@ -418,12 +428,14 @@ Lógica pura, sin red: así se puede probar de verdad. El anfitrión **no** est�
 **Interfaces:**
 - Produces (los usa la Task 6):
   - `data class PartyPlayer(val player: Int, val name: String, val host: String)`
-  - `class PartyRoster(maxPlayers: Int = 4)`
+  - `class PartyRoster(maxPlayers: Int = PartyRoster.MAX_PLAYERS)`
   - `fun join(id: Long, name: String, host: String, nowMs: Long): Int?`
+  - `fun playerOf(id: Long): Int?`
   - `fun ping(id: Long, nowMs: Long)`
   - `fun leave(id: Long)`
-  - `fun prune(nowMs: Long, timeoutMs: Long = 10_000): List<Long>`
+  - `fun prune(nowMs: Long, timeoutMs: Long = TIMEOUT_MS): List<Long>`
   - `fun guests(): List<PartyPlayer>`
+  - `companion object { const val MAX_PLAYERS = 4; const val TIMEOUT_MS = 10_000L }`
 
 - [ ] **Step 1: Escribir el test que falla**
 
@@ -444,13 +456,30 @@ class PartyRosterTest {
         assertEquals(listOf(2, 3), roster.guests().map { it.player })
     }
 
+    /**
+     * El INI reparte los nombres por posición, así que al irse uno los demás
+     * TIENEN que correrse: si no, la pantalla diría «Jugador 3» mientras el
+     * archivo lo llama PepoMote-P2.
+     */
     @Test
-    fun elHuecoDelQueSeVaLoOcupaElSiguiente() {
+    fun alIrseUnoLosDemasSeRenumeran() {
         val roster = PartyRoster()
         roster.join(1L, "Pixel", "10.0.0.2", 0L)
         roster.join(2L, "Moto", "10.0.0.3", 0L)
         roster.leave(1L)
-        assertEquals(2, roster.join(3L, "Xiaomi", "10.0.0.4", 0L))
+        assertEquals(listOf(2), roster.guests().map { it.player })
+        assertEquals("10.0.0.3", roster.guests().first().host)
+        assertEquals(2, roster.playerOf(2L))
+    }
+
+    /** Una reconexión no puede ocupar dos huecos ni colar la IP dos veces. */
+    @Test
+    fun elQueVuelveNoOcupaDosHuecos() {
+        val roster = PartyRoster()
+        roster.join(1L, "Pixel", "10.0.0.2", 0L)
+        roster.join(2L, "Pixel", "10.0.0.2", 5_000L)
+        assertEquals(1, roster.guests().size)
+        assertEquals(listOf("10.0.0.2"), roster.guests().map { it.host })
     }
 
     @Test
@@ -469,7 +498,7 @@ class PartyRosterTest {
         roster.join(2L, "Moto", "10.0.0.3", 0L)
         roster.ping(2L, 9_000L)
         assertEquals(listOf(1L), roster.prune(12_000L))
-        assertEquals(listOf(3), roster.guests().map { it.player })
+        assertEquals(listOf("10.0.0.3"), roster.guests().map { it.host })
     }
 }
 ```
@@ -490,25 +519,40 @@ data class PartyPlayer(val player: Int, val name: String, val host: String)
 /**
  * Quién está en la party y con qué número. El anfitrión NO está aquí: es
  * siempre el Jugador 1 y quien genera los INI antepone su propia IP. Esto
- * lleva solo a los invitados (2..maxPlayers).
+ * lleva solo a los invitados.
+ *
+ * El número sale de la POSICIÓN en orden de llegada, no de un hueco
+ * reservado, porque `dsu_client_ini` bautiza los servidores por posición: si
+ * los dos criterios se separaran, la pantalla y el archivo dirían cosas
+ * distintas y el usuario no tendría forma de saber cuál miente.
  *
  * No sabe de red a propósito: el transporte es de [PartyHost], y así el
  * reparto de números y la caída por silencio se prueban sin abrir un socket.
  */
 class PartyRoster(private val maxPlayers: Int = MAX_PLAYERS) {
 
-    private class Guest(val player: Int, val name: String, val host: String, var seen: Long)
+    private class Guest(val name: String, val host: String, var seen: Long)
 
+    /** En orden de llegada: de ahí sale el número de jugador. */
     private val guests = LinkedHashMap<Long, Guest>()
 
     /** @return el número de jugador, o null si la party está llena. */
     @Synchronized
     fun join(id: Long, name: String, host: String, nowMs: Long): Int? {
-        guests.remove(id)
-        val taken = guests.values.map { it.player }.toSet()
-        val player = (2..maxPlayers).firstOrNull { it !in taken } ?: return null
-        guests[id] = Guest(player, name, host, nowMs)
-        return player
+        // El que vuelve, vuelve una vez: tras un corte de Wi-Fi la conexión
+        // vieja puede seguir medio abierta, y sin esto el mismo móvil ocuparía
+        // dos huecos y su IP saldría dos veces en el INI.
+        guests.entries.removeIf { it.value.host == host }
+        if (guests.size >= maxPlayers - 1) return null
+        guests[id] = Guest(name, host, nowMs)
+        return playerOf(id)
+    }
+
+    /** El número de jugador de ese invitado ahora mismo, o null si ya no está. */
+    @Synchronized
+    fun playerOf(id: Long): Int? {
+        val i = guests.keys.indexOf(id)
+        return if (i < 0) null else i + 2
     }
 
     @Synchronized
@@ -533,10 +577,10 @@ class PartyRoster(private val maxPlayers: Int = MAX_PLAYERS) {
         return muertos
     }
 
-    /** Los invitados, ordenados por número de jugador. */
+    /** Los invitados, numerados por su posición actual. */
     @Synchronized
     fun guests(): List<PartyPlayer> =
-        guests.values.sortedBy { it.player }.map { PartyPlayer(it.player, it.name, it.host) }
+        guests.values.mapIndexed { i, g -> PartyPlayer(i + 2, g.name, g.host) }
 
     companion object {
         const val MAX_PLAYERS = 4
@@ -548,13 +592,13 @@ class PartyRoster(private val maxPlayers: Int = MAX_PLAYERS) {
 - [ ] **Step 4: Ver que pasa**
 
 Run: `cd android && ./gradlew testDebugUnitTest --tests "dev.pepotech.pepomote.net.PartyRosterTest"`
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add android/app/src/main/java/dev/pepotech/pepomote/net/PartyRoster.kt android/app/src/test/java/dev/pepotech/pepomote/net/PartyRosterTest.kt
-git commit -m "party: reparto de numeros de jugador y caida por silencio"
+git commit -m "party: reparto posicional de jugadores y caida por silencio"
 ```
 
 ---
@@ -566,11 +610,21 @@ git commit -m "party: reparto de numeros de jugador y caida por silencio"
 - Test: `android/app/src/test/java/dev/pepotech/pepomote/net/PartyTest.kt`
 
 **Interfaces:**
-- Consumes: `PartyRoster`, `PartyPlayer` de la Task 5
+- Consumes: `PartyRoster`, `PartyPlayer` (Task 5); `ScreenClient.jsonString` y
+  `TextInput.escape`, que ya existen en el repo
 - Produces (los usan las Tasks 7 y 8):
-  - `object Party { const val PORT = 26761 }`
-  - `class PartyHost(port: Int = Party.PORT)` con `fun start()`, `fun stop()`, `val guests: StateFlow<List<PartyPlayer>>`
-  - `class PartyGuest(host: String, port: Int = Party.PORT, name: String = Party.deviceName())` con `fun start()`, `fun stop()`, `val player: StateFlow<Int?>`
+  - `object Party { const val PORT = 26761; const val PING_MS = 3_000L }`
+  - `class PartyHost(port: Int = Party.PORT)` con `fun start()`, `fun stop()`, `fun guests(): List<PartyPlayer>`
+  - `class PartyGuest(host: String, port: Int = Party.PORT, name: String = Party.deviceName())` con `fun start()`, `fun stop()`, `val player: StateFlow<Int?>`, `val full: StateFlow<Boolean>`
+
+**NADA de `org.json` en este archivo.** `JSONObject` viene dentro de
+`android.jar`, no de `java.*`, y este módulo no tiene
+`unitTests.returnDefaultValues`, así que en un test de JVM **todos sus métodos
+lanzan `RuntimeException: Method … not mocked`** y `PartyTest` no arrancaría. El
+repo ya chocó con esto: mira el comentario de
+`net/ScreenClient.kt:88-91` («*Sin org.json: el de Android no existe en la JVM
+de los tests*»). Se montan los cuatro mensajes a mano con `TextInput.escape` y
+se leen con `ScreenClient.jsonString`, las dos ya en el árbol.
 
 - [ ] **Step 1: Escribir el test que falla**
 
@@ -580,6 +634,7 @@ Usa sockets de verdad en localhost: los unit tests de Gradle corren en JVM.
 package dev.pepotech.pepomote.net
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.ServerSocket
 
@@ -599,19 +654,58 @@ class PartyTest {
             invitado.start()
             try {
                 esperaA { invitado.player.value == 2 }
-                esperaA { anfitrion.guests.value.size == 1 }
-                assertEquals(2, anfitrion.guests.value.first().player)
-                assertEquals("127.0.0.1", anfitrion.guests.value.first().host)
+                esperaA { anfitrion.guests().size == 1 }
+                assertEquals(2, anfitrion.guests().first().player)
+                assertEquals("127.0.0.1", anfitrion.guests().first().host)
+                assertEquals("Pixel de prueba", anfitrion.guests().first().name)
             } finally {
                 invitado.stop()
             }
-            esperaA { anfitrion.guests.value.isEmpty() }
+            esperaA { anfitrion.guests().isEmpty() }
         } finally {
             anfitrion.stop()
         }
     }
 
-    private fun esperaA(limiteMs: Long = 3_000, cond: () -> Boolean) {
+    /** Si el anfitrión desaparece, el invitado tiene que enterarse. */
+    @Test
+    fun siElAnfitrionMuereElInvitadoSeEntera() {
+        val port = puertoLibre()
+        val anfitrion = PartyHost(port)
+        anfitrion.start()
+        val invitado = PartyGuest("127.0.0.1", port, "Pixel de prueba")
+        invitado.start()
+        try {
+            esperaA { invitado.player.value == 2 }
+            anfitrion.stop()
+            esperaA(10_000) { invitado.player.value == null }
+        } finally {
+            invitado.stop()
+        }
+    }
+
+    /** Un stop() tiene que poder seguirse de un start(): el servicio reentra. */
+    @Test
+    fun sePuedeParaYArrancarDeNuevo() {
+        val port = puertoLibre()
+        val anfitrion = PartyHost(port)
+        anfitrion.start()
+        anfitrion.stop()
+        anfitrion.start()
+        try {
+            val invitado = PartyGuest("127.0.0.1", port, "Pixel de prueba")
+            invitado.start()
+            try {
+                esperaA { invitado.player.value == 2 }
+            } finally {
+                invitado.stop()
+            }
+        } finally {
+            anfitrion.stop()
+        }
+    }
+
+    private fun esperaA(limiteMs: Long = 5_000, cond: () -> Boolean) {
         val fin = System.currentTimeMillis() + limiteMs
         while (System.currentTimeMillis() < fin) {
             if (cond()) return
@@ -633,13 +727,15 @@ Expected: FAIL — `Unresolved reference: PartyHost`.
 package dev.pepotech.pepomote.net
 
 import android.os.Build
+import dev.pepotech.pepomote.control.TextInput
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import org.json.JSONObject
 import java.io.BufferedReader
+import java.net.Inet4Address
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
 import kotlin.concurrent.thread
 
 /**
@@ -648,41 +744,60 @@ import kotlin.concurrent.thread
  * sepa las IPs de los demás y pueda escribir los dos INI con todos dentro.
  * El tráfico de juego NO pasa por aquí.
  *
- * Una línea JSON por mensaje, como el canal de control de PMP.
+ * Una línea JSON por mensaje, como el canal de control de PMP, pero montada y
+ * leída a mano: `org.json` vive en `android.jar` y en los tests de JVM lanza
+ * «not mocked» (lo mismo que documenta [ScreenClient]).
  */
 object Party {
     /** TCP. El 26760/UDP es el DSU; aquí el móvil solo era cliente del PC. */
     const val PORT = 26761
     const val PING_MS = 3_000L
 
-    fun joinMessage(name: String): String =
-        JSONObject().put("m", "join").put("v", 1).put("name", name).toString()
+    fun joinMessage(name: String) = "{\"m\":\"join\",\"v\":1,\"name\":\"${TextInput.escape(name)}\"}"
+    fun pingMessage() = "{\"m\":\"ping\"}"
+    fun playerMessage(n: Int) = "{\"m\":\"player\",\"n\":$n}"
+    fun fullMessage() = "{\"m\":\"err\",\"e\":\"party_full\"}"
 
-    fun pingMessage(): String = JSONObject().put("m", "ping").toString()
+    fun kind(line: String): String? = ScreenClient.jsonString(line, "m")
+    fun nameOf(line: String): String? = ScreenClient.jsonString(line, "name")
+    fun errorOf(line: String): String? = ScreenClient.jsonString(line, "e")
+    fun playerOf(line: String): Int? =
+        Regex("\"n\"\\s*:\\s*(\\d+)").find(line)?.groupValues?.get(1)?.toIntOrNull()
 
     fun deviceName(): String = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
 }
 
 /**
- * El anfitrión (Jugador 1): acepta a quien se una, lleva el roster y lo
- * publica. La IP de cada invitado se saca del PROPIO socket, nunca de lo que
- * diga el invitado: es el dato que acaba dentro del INI.
+ * El anfitrión (Jugador 1): acepta a quien se una y lleva el roster. La IP de
+ * cada invitado se saca del PROPIO socket, nunca de lo que diga el invitado:
+ * es el dato que acaba dentro del INI.
+ *
+ * No publica un `StateFlow`: el servicio ya sondea una vez por segundo, y un
+ * flujo escrito desde varios hilos solo añadiría una carrera y una segunda
+ * copia del estado. La verdad está en el roster.
  */
 class PartyHost(private val port: Int = Party.PORT) {
 
     private val roster = PartyRoster()
-    private val _guests = MutableStateFlow<List<PartyPlayer>>(emptyList())
-    val guests: StateFlow<List<PartyPlayer>> = _guests
-
     private var server: ServerSocket? = null
+    private val vivos = HashMap<Long, Socket>()
     @Volatile private var running = false
     private var nextId = 1L
 
+    fun guests(): List<PartyPlayer> = roster.guests()
+
     fun start() {
         if (running) return
-        running = true
-        val srv = ServerSocket(port)
+        val srv = try {
+            ServerSocket(port)
+        } catch (e: Exception) {
+            // El puerto puede estar ocupado por una instancia anterior que aún
+            // no ha muerto. Si dejáramos running = true, este objeto quedaría
+            // tapiado: ningún start() posterior volvería a intentarlo.
+            return
+        }
         server = srv
+        running = true
         thread(isDaemon = true, name = "party-host") {
             while (running) {
                 val socket = try {
@@ -693,11 +808,12 @@ class PartyHost(private val port: Int = Party.PORT) {
                 val id = synchronized(this) { nextId++ }
                 thread(isDaemon = true, name = "party-guest-$id") { atiende(id, socket) }
             }
+            running = false
         }
         thread(isDaemon = true, name = "party-prune") {
             while (running) {
                 Thread.sleep(1_000)
-                if (roster.prune(System.currentTimeMillis()).isNotEmpty()) publica()
+                roster.prune(System.currentTimeMillis())
             }
         }
     }
@@ -705,42 +821,57 @@ class PartyHost(private val port: Int = Party.PORT) {
     private fun atiende(id: Long, socket: Socket) {
         socket.use { s ->
             try {
+                // Sin esto, un móvil que desaparece sin cerrar (Wi-Fi apagado)
+                // deja este hilo bloqueado en readLine() para siempre: justo el
+                // caso que el latido dice cubrir.
+                s.soTimeout = PartyRoster.TIMEOUT_MS.toInt()
+                synchronized(this) { vivos[id] = s }
                 val reader = s.getInputStream().bufferedReader()
                 val writer = s.getOutputStream().bufferedWriter()
                 val primera = reader.readLine() ?: return
-                val msg = JSONObject(primera)
-                if (msg.optString("m") != "join") return
-                val host = (s.inetAddress?.hostAddress) ?: return
-                val player = roster.join(id, msg.optString("name", "?"), host, System.currentTimeMillis())
+                if (Party.kind(primera) != "join") return
+                // IPv4 obligatorio: un ':' de IPv6 dentro de una entrada
+                // `nombre:direccion:puerto` rompería el parseo de Dolphin sin
+                // decir nada.
+                val addr = s.inetAddress
+                if (addr !is Inet4Address) return
+                val host = addr.hostAddress ?: return
+                val player = roster.join(id, Party.nameOf(primera) ?: "?", host, System.currentTimeMillis())
                 if (player == null) {
-                    writer.write(JSONObject().put("m", "err").put("e", "party_full").toString())
+                    writer.write(Party.fullMessage())
                     writer.write("\n")
                     writer.flush()
                     return
                 }
-                writer.write(JSONObject().put("m", "joined").put("player", player).toString())
+                writer.write(Party.playerMessage(player))
                 writer.write("\n")
                 writer.flush()
-                publica()
-                bucle(id, reader)
+                bucle(id, reader, writer)
             } catch (e: Exception) {
                 // se cayó: sale del roster igual que si se hubiera ido
             } finally {
                 roster.leave(id)
-                publica()
+                synchronized(this) { vivos.remove(id) }
             }
         }
     }
 
-    private fun bucle(id: Long, reader: BufferedReader) {
+    /**
+     * Cada latido se contesta con el número de jugador de ese momento. Dos
+     * pájaros de un tiro: el invitado se entera si se ha corrido de sitio
+     * porque otro se fue, y tiene tráfico que leer para notar que el anfitrión
+     * ha muerto.
+     */
+    private fun bucle(id: Long, reader: BufferedReader, writer: java.io.BufferedWriter) {
         while (running) {
             reader.readLine() ?: return
-            roster.ping(id, System.currentTimeMillis())
+            val ahora = System.currentTimeMillis()
+            roster.ping(id, ahora)
+            val player = roster.playerOf(id) ?: return
+            writer.write(Party.playerMessage(player))
+            writer.write("\n")
+            writer.flush()
         }
-    }
-
-    private fun publica() {
-        _guests.value = roster.guests()
     }
 
     fun stop() {
@@ -750,11 +881,16 @@ class PartyHost(private val port: Int = Party.PORT) {
         } catch (e: Exception) {
         }
         server = null
-        _guests.value = emptyList()
+        // Cerrar los aceptados: cerrar el ServerSocket solo mata el accept(),
+        // no las conexiones ya establecidas.
+        synchronized(this) {
+            vivos.values.forEach { runCatching { it.close() } }
+            vivos.clear()
+        }
     }
 }
 
-/** El invitado: se une al anfitrión y le da señales de vida. */
+/** El invitado: se une al anfitrión, le da señales de vida y lo vigila. */
 class PartyGuest(
     private val host: String,
     private val port: Int = Party.PORT,
@@ -764,35 +900,60 @@ class PartyGuest(
     private val _player = MutableStateFlow<Int?>(null)
     val player: StateFlow<Int?> = _player
 
+    /** La party está llena: es distinto de «no hay anfitrión» y se dice. */
+    private val _full = MutableStateFlow(false)
+    val full: StateFlow<Boolean> = _full
+
     private var socket: Socket? = null
     @Volatile private var running = false
 
     fun start() {
         if (running) return
         running = true
+        _full.value = false
         thread(isDaemon = true, name = "party-guest") {
             try {
                 val s = Socket()
                 s.connect(InetSocketAddress(host, port), 4_000)
+                // Tres latidos de margen: si el anfitrión no contesta en ese
+                // tiempo, es que ya no está.
+                s.soTimeout = (Party.PING_MS * 3).toInt()
                 socket = s
                 val reader = s.getInputStream().bufferedReader()
                 val writer = s.getOutputStream().bufferedWriter()
                 writer.write(Party.joinMessage(name))
                 writer.write("\n")
                 writer.flush()
-                val respuesta = JSONObject(reader.readLine() ?: return@thread)
-                if (respuesta.optString("m") != "joined") return@thread
-                _player.value = respuesta.optInt("player")
+                val respuesta = reader.readLine() ?: return@thread
+                if (Party.errorOf(respuesta) == "party_full") {
+                    _full.value = true
+                    return@thread
+                }
+                if (Party.kind(respuesta) != "player") return@thread
+                _player.value = Party.playerOf(respuesta)
                 while (running) {
                     Thread.sleep(Party.PING_MS)
+                    if (!running) break
                     writer.write(Party.pingMessage())
                     writer.write("\n")
                     writer.flush()
+                    // Un readLine() que devuelve null o revienta = anfitrión
+                    // caído. Sin esta lectura, el write no fallaría hasta que
+                    // TCP agotara sus reintentos (minutos) y la pantalla
+                    // seguiría diciendo que estamos en una party que ya no
+                    // existe, escondiendo los INI.
+                    val linea = reader.readLine() ?: break
+                    if (Party.kind(linea) == "player") {
+                        Party.playerOf(linea)?.let { _player.value = it }
+                    }
                 }
+            } catch (e: SocketTimeoutException) {
+                // el anfitrión dejó de contestar
             } catch (e: Exception) {
                 // sin anfitrión: la pantalla ofrece escanear otra vez
             } finally {
                 _player.value = null
+                runCatching { socket?.close() }
             }
         }
     }
@@ -805,6 +966,7 @@ class PartyGuest(
         }
         socket = null
         _player.value = null
+        _full.value = false
     }
 }
 ```
@@ -830,13 +992,14 @@ git commit -m "party: canal TCP entre moviles, la IP sale del socket"
 - Test: `android/app/src/test/java/dev/pepotech/pepomote/net/PartyStoreTest.kt`
 
 **Interfaces:**
-- Consumes: `Party.PORT` de la Task 6
-- Produces (los usa la Task 8):
+- Consumes: `Party.PORT` (Task 6)
+- Produces (los usa la Task 8), todos miembros de `object PartyStore`:
   - `data class PartyInvite(val host: String, val port: Int, val name: String)`
-  - `fun PartyStore.inviteUrl(host: String, name: String): String`
-  - `fun PartyStore.parseInviteUrl(url: String): PartyInvite?`
-  - `fun PartyStore.remember(context: Context, invite: PartyInvite)`
-  - `fun PartyStore.last(context: Context): PartyInvite?`
+  - `fun inviteUrl(host: String, name: String): String`
+  - `fun parseInviteUrl(url: String): PartyInvite?`
+  - `fun remember(context: Context, invite: PartyInvite)`
+  - `fun last(context: Context): PartyInvite?`
+  - `fun forget(context: Context)`
 
 - [ ] **Step 1: Escribir el test que falla**
 
@@ -868,6 +1031,17 @@ class PartyStoreTest {
         assertNull(PartyStore.parseInviteUrl("pepomote://party?v=1&port=26761"))
         assertNull(PartyStore.parseInviteUrl("cualquier cosa"))
     }
+
+    /** Un QR ajeno o corrompido se rechaza; no puede reventar el escáner. */
+    @Test
+    fun unaUrlMalFormadaNoRevienta() {
+        assertNull(PartyStore.parseInviteUrl("pepomote://party?v=1&host=1.2.3.4&name=%zz"))
+    }
+
+    @Test
+    fun otraVersionNoVale() {
+        assertNull(PartyStore.parseInviteUrl("pepomote://party?v=9&host=1.2.3.4"))
+    }
 }
 ```
 
@@ -878,7 +1052,8 @@ Expected: FAIL — `Unresolved reference: PartyStore`.
 
 - [ ] **Step 3: Implementar**
 
-`Uri.parse` es de Android y no corre en un unit test de JVM, así que el parseo se hace a mano sobre la cadena (como hace `Discovery` con sus datagramas).
+`Uri.parse` es de Android y no corre en un unit test de JVM, así que el parseo
+se hace a mano sobre la cadena (igual que `ScreenClient` lee sus respuestas).
 
 ```kotlin
 package dev.pepotech.pepomote.net
@@ -912,14 +1087,21 @@ object PartyStore {
 
     fun parseInviteUrl(url: String): PartyInvite? {
         if (!url.startsWith(PREFIX)) return null
-        val params = url.removePrefix(PREFIX).split('&').mapNotNull {
-            val (k, v) = it.split('=', limit = 2).takeIf { p -> p.size == 2 } ?: return@mapNotNull null
-            k to v
-        }.toMap()
-        val host = params["host"]?.takeIf { it.isNotBlank() } ?: return null
-        val port = params["port"]?.toIntOrNull() ?: Party.PORT
-        val name = params["name"]?.let { URLDecoder.decode(it, "UTF-8") } ?: ""
-        return PartyInvite(host, port, name)
+        return try {
+            val params = url.removePrefix(PREFIX).split('&').mapNotNull {
+                val p = it.split('=', limit = 2)
+                if (p.size == 2) p[0] to p[1] else null
+            }.toMap()
+            if (params["v"] != "1") return null
+            val host = params["host"]?.takeIf { it.isNotBlank() } ?: return null
+            val port = params["port"]?.toIntOrNull() ?: Party.PORT
+            val name = params["name"]?.let { URLDecoder.decode(it, "UTF-8") } ?: ""
+            PartyInvite(host, port, name)
+        } catch (e: Exception) {
+            // URLDecoder revienta con un % mal escapado: un QR ajeno no puede
+            // tumbar el escáner, solo no ser una party
+            null
+        }
     }
 
     fun remember(context: Context, invite: PartyInvite) {
@@ -936,13 +1118,18 @@ object PartyStore {
         val host = p.getString(KEY_HOST, null) ?: return null
         return PartyInvite(host, p.getInt(KEY_PORT, Party.PORT), p.getString(KEY_NAME, "") ?: "")
     }
+
+    /** Salir de la party: sin esto, el móvil se reuniría en cada arranque. */
+    fun forget(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+    }
 }
 ```
 
 - [ ] **Step 4: Ver que pasa**
 
 Run: `cd android && ./gradlew testDebugUnitTest --tests "dev.pepotech.pepomote.net.PartyStoreTest"`
-Expected: PASS, 3 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -955,13 +1142,13 @@ git commit -m "party: URL de invitacion y party recordada"
 
 ### Task 8: La pantalla — QR, lista de jugadores y los INI con todos
 
-Cierra el círculo: es la primera tarea tras la 4 en la que la app vuelve a compilar.
+Cierra el círculo.
 
 **Files:**
 - Modify: `android/app/src/main/java/dev/pepotech/pepomote/service/DsuState.kt`
 - Modify: `android/app/src/main/java/dev/pepotech/pepomote/service/DsuForegroundService.kt`
 - Modify: `android/app/src/main/java/dev/pepotech/pepomote/ui/screens/DolphinAndroidScreen.kt`
-- Modify: `android/app/src/main/java/dev/pepotech/pepomote/MainActivity.kt:285-305`
+- Modify: `android/app/src/main/java/dev/pepotech/pepomote/MainActivity.kt` (en `onPairContent`, línea ~288)
 - Modify: `android/app/src/main/res/values/strings.xml`, `android/app/src/main/res/values-en/strings.xml`
 
 **Interfaces:**
@@ -969,7 +1156,7 @@ Cierra el círculo: es la primera tarea tras la 4 en la que la app vuelve a comp
 
 - [ ] **Step 1: Estado de la party en `DsuState`**
 
-Añadir a `DsuState`:
+Añadir a `DsuState` (importa `dev.pepotech.pepomote.net.PartyPlayer` y `kotlinx.coroutines.flow.MutableStateFlow`):
 
 ```kotlin
         /** Los invitados de la party, vacío si se juega solo. */
@@ -977,9 +1164,10 @@ Añadir a `DsuState`:
 
         /** Si este móvil se unió a la party de otro: su número de jugador. */
         val joinedAs: MutableStateFlow<Int?> = MutableStateFlow(null)
-```
 
-(importa `dev.pepotech.pepomote.net.PartyPlayer` y `kotlinx.coroutines.flow.MutableStateFlow`)
+        /** Se intentó entrar en una party llena. */
+        val partyFull: MutableStateFlow<Boolean> = MutableStateFlow(false)
+```
 
 - [ ] **Step 2: El servicio alberga la party**
 
@@ -990,18 +1178,17 @@ En `DsuForegroundService`, junto a `motion`:
     private var partyGuest: PartyGuest? = null
 ```
 
-En `onStartCommand`, tras arrancar el DSU, arrancar el anfitrión y, si había una party recordada, unirse a ella:
+En `onStartCommand`, tras arrancar el DSU. **Parar siempre lo anterior antes de
+crear**: `onStartCommand` puede reentrar sobre el mismo servicio vivo, y sin
+esto el bind del 26761 fallaría, el fallo se tragaría en silencio y la party
+quedaría muerta con el QR aún en pantalla:
 
 ```kotlin
-        partyHost = PartyHost().also { host ->
-            try {
-                host.start()
-            } catch (e: Exception) {
-                // el puerto de party ocupado no impide jugar solo
-            }
-        }
-        PartyStore.last(this)?.let { invite ->
-            partyGuest = PartyGuest(invite.host, invite.port).also { it.start() }
+        partyHost?.stop()
+        partyHost = PartyHost().also { it.start() }
+        partyGuest?.stop()
+        partyGuest = PartyStore.last(this)?.let { invite ->
+            PartyGuest(invite.host, invite.port).also { it.start() }
         }
 ```
 
@@ -1012,30 +1199,39 @@ En `onDestroy`, antes de `DsuState.publish(DsuState.Ui.Off)`:
         partyHost = null
         partyGuest?.stop()
         partyGuest = null
+        // Si no se limpian, la pantalla seguiría enseñando la lista de
+        // invitados y escondiendo los INI después de parar.
+        DsuState.guests.value = emptyList()
+        DsuState.joinedAs.value = null
+        DsuState.partyFull.value = false
 ```
 
-Y en `startPolling`, publicar también los flujos de la party:
+Y en `startPolling`, junto a la publicación del estado:
 
 ```kotlin
-                DsuState.guests.value = partyHost?.guests?.value ?: emptyList()
+                DsuState.guests.value = partyHost?.guests() ?: emptyList()
                 DsuState.joinedAs.value = partyGuest?.player?.value
+                DsuState.partyFull.value = partyGuest?.full?.value ?: false
 ```
 
 - [ ] **Step 3: La pantalla**
 
-En `DolphinAndroidScreen`, tras la tarjeta de estado, añadir la lista y el QR, y cambiar las dos `FileCard` para que usen la lista entera:
+En `DolphinAndroidScreen`, añadir el parámetro `onJoin: () -> Unit` a la firma
+(lo cablea `MainActivity` al escáner) y, dentro:
 
 ```kotlin
     val guests by DsuState.guests.collectAsState()
     val joinedAs by DsuState.joinedAs.collectAsState()
+    val partyFull by DsuState.partyFull.collectAsState()
     val hosts = listOf(ip ?: "0.0.0.0") + guests.map { it.host }
 ```
 
+La tarjeta de la party, tras la de estado:
+
 ```kotlin
-        // --- la party: quién juega
-        if (joinedAs == null) {
-            Spacer(Modifier.height(16.dp))
-            InfoCard {
+        Spacer(Modifier.height(16.dp))
+        InfoCard {
+            if (joinedAs == null) {
                 Text(stringResource(R.string.party_title), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Text(stringResource(R.string.party_me, 1), style = MaterialTheme.typography.bodyMedium)
@@ -1051,19 +1247,32 @@ En `DolphinAndroidScreen`, tras la tarjeta de estado, añadir la lista y el QR, 
                     Spacer(Modifier.height(6.dp))
                     Text(stringResource(R.string.party_scan_me), style = MaterialTheme.typography.bodySmall)
                 }
-            }
-        } else {
-            Spacer(Modifier.height(16.dp))
-            InfoCard {
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onJoin) { Text(stringResource(R.string.party_join)) }
+            } else {
                 Text(
                     stringResource(R.string.party_joined, joinedAs ?: 0),
                     style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = {
+                    PartyStore.forget(context)
+                    DsuForegroundService.stop(context)
+                    DsuForegroundService.start(context)
+                }) { Text(stringResource(R.string.party_leave)) }
+            }
+            if (partyFull) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(R.string.party_full),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PepoColors.Blue
                 )
             }
         }
 ```
 
-Y las tarjetas de archivo, que solo salen en el anfitrión:
+Las tarjetas de archivo solo salen en el anfitrión, y ahora con todos:
 
 ```kotlin
         if (joinedAs == null) {
@@ -1073,7 +1282,8 @@ Y las tarjetas de archivo, que solo salen en el anfitrión:
         }
 ```
 
-El QR, con zxing (ya está por el escáner):
+El QR, con zxing (ya está por el escáner). `setPixels` de una vez y no
+`setPixel` 230 400 veces, que se paga en el hilo de composición:
 
 ```kotlin
 /** El QR que escanean los demás móviles para unirse a esta party. */
@@ -1082,23 +1292,25 @@ private fun QrCode(text: String, size: Int = 480) {
     val bitmap = remember(text) {
         val matrix = com.google.zxing.qrcode.QRCodeWriter()
             .encode(text, com.google.zxing.BarcodeFormat.QR_CODE, size, size)
-        android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888).apply {
-            for (x in 0 until size) {
-                for (y in 0 until size) {
-                    setPixel(x, y, if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
-                }
-            }
+        val pixels = IntArray(size * size) { i ->
+            if (matrix[i % size, i / size]) android.graphics.Color.BLACK else android.graphics.Color.WHITE
         }
+        android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+            .apply { setPixels(pixels, 0, size, 0, 0, size, size) }
     }
     Image(bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.size(220.dp))
 }
 ```
 
-(imports: `androidx.compose.foundation.Image`, `androidx.compose.ui.graphics.asImageBitmap`, `androidx.compose.runtime.remember`, `androidx.compose.runtime.collectAsState`, `androidx.compose.runtime.getValue`, y los de `net`)
+Imports nuevos: `androidx.compose.foundation.Image`,
+`androidx.compose.ui.graphics.asImageBitmap`, `androidx.compose.runtime.remember`,
+`androidx.compose.foundation.layout.size`, `dev.pepotech.pepomote.net.Party`,
+`PartyRoster`, `PartyStore`, `dev.pepotech.pepomote.service.DsuForegroundService`.
 
 - [ ] **Step 4: Aceptar el QR de party en `MainActivity`**
 
-En `onQrScanned` (línea ~285), antes de intentar el emparejamiento con PC:
+La función es `internal fun onPairContent(contents: String)`, en la línea ~288.
+Al principio, antes de intentar el emparejamiento con PC:
 
 ```kotlin
         PartyStore.parseInviteUrl(contents)?.let { invite ->
@@ -1110,6 +1322,9 @@ En `onQrScanned` (línea ~285), antes de intentar el emparejamiento con PC:
         }
 ```
 
+Y cablear `onJoin` donde se construye `DolphinAndroidScreen` (línea ~438):
+`onJoin = { scanQr() }`.
+
 - [ ] **Step 5: Textos, en los dos idiomas**
 
 `res/values/strings.xml`:
@@ -1119,23 +1334,32 @@ En `onQrScanned` (línea ~285), antes de intentar el emparejamiento con PC:
     <string name="party_me">Jugador %1$d · este móvil</string>
     <string name="party_guest">Jugador %1$d · %2$s</string>
     <string name="party_scan_me">Que los demás escaneen este código para unirse</string>
+    <string name="party_join">Unirse a la party de otro móvil</string>
     <string name="party_joined">Unido a la party como Jugador %1$d</string>
+    <string name="party_leave">Salir de la party</string>
+    <string name="party_full">La party está llena: ya hay cuatro mandos</string>
 ```
 
-`res/values-en/strings.xml`:
+`res/values-en/strings.xml` — **el apóstrofo va escapado (`\'`) o aapt2 rompe el
+build**; `./gradlew test` no lo detecta, salta en `assembleDebug`:
 
 ```xml
-    <string name="party_title">Who's playing</string>
+    <string name="party_title">Who\'s playing</string>
     <string name="party_me">Player %1$d · this phone</string>
     <string name="party_guest">Player %1$d · %2$s</string>
     <string name="party_scan_me">Have the others scan this code to join</string>
+    <string name="party_join">Join another phone\'s party</string>
     <string name="party_joined">Joined the party as Player %1$d</string>
+    <string name="party_leave">Leave the party</string>
+    <string name="party_full">The party is full: there are already four controllers</string>
 ```
 
 - [ ] **Step 6: Compilar y pasar todo**
 
 Run: `cd android && ./gradlew test assembleDebug`
-Expected: PASS, incluido `StringsParityTest` (mismas claves y mismos `%1$d`/`%2$s` en los dos idiomas).
+Expected: PASS, incluido `StringsParityTest`. El `assembleDebug` es
+imprescindible aquí: es lo único que pasa los recursos por aapt2 y detecta un
+apóstrofo sin escapar.
 
 - [ ] **Step 7: Commit**
 
