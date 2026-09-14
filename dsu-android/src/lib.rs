@@ -108,35 +108,41 @@ pub extern "system" fn Java_dev_pepotech_pepomote_net_DsuServer_nativeClients<'l
     current().map(|d| d.client_count()).unwrap_or(0) as jint
 }
 
-/// El `DSUClient.ini` que hay que dejarle a Dolphin, con la IP de ESTE móvil.
-/// Sale de `dsu::ini`, el mismo sitio del que sale el que el receptor de PC
-/// escribe solo: si un día cambia el mapeo, cambia en los dos a la vez.
+/// El `DSUClient.ini` que hay que dejarle a Dolphin, con un servidor por
+/// móvil de la party. `hosts` son las IPs separadas por comas y en orden de
+/// jugador (la primera es el anfitrión). Sale de `dsu::ini`, el mismo sitio
+/// del que sale el que el receptor de PC escribe solo.
 #[no_mangle]
 pub extern "system" fn Java_dev_pepotech_pepomote_net_DsuServer_nativeDsuClientIni<'local>(
     mut env: JNIEnv<'local>,
     _this: JObject<'local>,
-    host: JString<'local>,
+    hosts: JString<'local>,
     port: jint,
 ) -> jstring {
-    let host: String = match env.get_string(&host) {
+    let hosts: String = match env.get_string(&hosts) {
         Ok(s) => s.into(),
         Err(_) => return JObject::null().into_raw(),
     };
+    let hosts: Vec<&str> = hosts.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+    if hosts.is_empty() {
+        return JObject::null().into_raw();
+    }
     let port = if (1..=65535).contains(&port) { port as u16 } else { dsu::DSU_PORT };
-    match env.new_string(dsu::ini::dsu_client_ini(&host, port)) {
+    match env.new_string(dsu::ini::dsu_client_ini(&hosts, port)) {
         Ok(s) => s.into_raw(),
         Err(_) => JObject::null().into_raw(),
     }
 }
 
-/// El `WiimoteNew.ini` con el Mando de Wii emulado del Jugador 1 leyendo del
-/// slot DSU 0, y los otros tres apagados.
+/// El `WiimoteNew.ini` con un Mando de Wii emulado por jugador de la party y
+/// los sobrantes apagados.
 #[no_mangle]
 pub extern "system" fn Java_dev_pepotech_pepomote_net_DsuServer_nativeWiimoteIni<'local>(
     env: JNIEnv<'local>,
     _this: JObject<'local>,
+    count: jint,
 ) -> jstring {
-    match env.new_string(dsu::ini::wiimote_new_ini(0)) {
+    match env.new_string(dsu::ini::wiimote_new_ini(count.max(1) as usize)) {
         Ok(s) => s.into_raw(),
         Err(_) => JObject::null().into_raw(),
     }
