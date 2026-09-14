@@ -20,7 +20,7 @@ use crate::MAX_PLAYERS;
 /// en el PC no se notaba y en «Dolphin en Android» dejaba el puntero muerto.
 /// Sus únicos ajustes son `Total Yaw` y `Accelerometer Influence`; no hay
 /// `Total Pitch`.
-const MAPPING: &str = "Device = DSUClient/{DEV}/PepoMote
+const MAPPING: &str = "Device = {DEV}
 Source = 1
 Buttons/A = Cross
 Buttons/B = Circle
@@ -70,9 +70,20 @@ Nunchuk/IMUAccelerometer/Forward = `DSUClient/{NDEV}/PepoMote:Accel Forward`
 Nunchuk/IMUAccelerometer/Backward = `DSUClient/{NDEV}/PepoMote:Accel Backward`
 ";
 
-/// Cuerpo de `[WiimoteN]` para el móvil que ocupa el slot DSU dado.
-pub fn wiimote_mapping(slot: u8) -> String {
-    MAPPING.replace("{DEV}", &slot.to_string())
+/// El nombre con el que el jugador `n` (1..=MAX_PLAYERS) sale en Dolphin.
+/// Lo usan los DOS archivos: `Entries` en DSUClient.ini y `Device` en
+/// WiimoteNew.ini. Si cada uno lo inventara por su cuenta y se
+/// desincronizaran, Dolphin no encontraría el mando y no diría por qué.
+pub fn player_name(n: usize) -> String {
+    format!("PepoMote-P{n}")
+}
+
+/// Cuerpo de `[WiimoteN]` leyendo del device DSU dado, ya montado por quien
+/// llama: el receptor de PC es UN servidor con N slots
+/// (`DSUClient/<slot>/PepoMote`) y la party de móviles son N servidores en el
+/// slot 0 (`DSUClient/0/PepoMote-P<n>`).
+pub fn wiimote_mapping(device: &str) -> String {
+    MAPPING.replace("{DEV}", device)
 }
 
 /// Las líneas del Nunchuk emulado que lee del slot DSU dado (el del OTRO
@@ -83,24 +94,35 @@ pub fn nunchuk_mapping(slot: u8) -> String {
 
 /// Una entrada de la clave `Entries` de DSUClient.ini, SIN el `;` final
 /// (quien la inserta decide si hay que separarla de las que ya había).
-pub fn dsu_entry(host: &str, port: u16) -> String {
-    format!("PepoMote:{host}:{port}")
+pub fn dsu_entry(name: &str, host: &str, port: u16) -> String {
+    format!("{name}:{host}:{port}")
 }
 
-/// `DSUClient.ini` entero, para colocarlo tal cual donde no se puede escribir
-/// por código (Android). Pisa cualquier otro servidor DSU configurado: es el
-/// precio de darlo hecho.
-pub fn dsu_client_ini(host: &str, port: u16) -> String {
-    format!("[Server]\nEnabled = True\nEntries = {};\n", dsu_entry(host, port))
+/// `DSUClient.ini` entero con un servidor por móvil, en orden de jugador.
+/// Para colocarlo tal cual donde no se puede escribir por código (Android).
+/// Pisa cualquier otro servidor DSU configurado: es el precio de darlo hecho.
+pub fn dsu_client_ini(hosts: &[&str], port: u16) -> String {
+    let entries: String = hosts
+        .iter()
+        .take(MAX_PLAYERS)
+        .enumerate()
+        .map(|(i, host)| format!("{};", dsu_entry(&player_name(i + 1), host, port)))
+        .collect();
+    format!("[Server]\nEnabled = True\nEntries = {entries}\n")
 }
 
-/// `WiimoteNew.ini` entero con UN Mando de Wii emulado (Jugador 1) leyendo
-/// del slot DSU dado, y los otros tres apagados: un mando emulado de más
-/// sale en pantalla en los juegos y estorba.
-pub fn wiimote_new_ini(slot: u8) -> String {
-    let mut out = format!("[Wiimote1]\n{}Extension = None\n", wiimote_mapping(slot));
-    for n in 2..=MAX_PLAYERS {
-        out.push_str(&format!("[Wiimote{n}]\nSource = 0\n"));
+/// `WiimoteNew.ini` entero: un Mando de Wii emulado por jugador, cada uno
+/// leyendo del slot 0 de SU móvil, y los sobrantes apagados (un mando emulado
+/// de más sale en pantalla en los juegos y estorba).
+pub fn wiimote_new_ini(n_players: usize) -> String {
+    let n = n_players.clamp(1, MAX_PLAYERS);
+    let mut out = String::new();
+    for i in 1..=n {
+        let device = format!("DSUClient/0/{}", player_name(i));
+        out.push_str(&format!("[Wiimote{i}]\n{}Extension = None\n", wiimote_mapping(&device)));
+    }
+    for i in n + 1..=MAX_PLAYERS {
+        out.push_str(&format!("[Wiimote{i}]\nSource = 0\n"));
     }
     out
 }
@@ -110,31 +132,91 @@ mod tests {
     use super::*;
 
     #[test]
-    fn el_slot_va_en_el_device() {
-        assert!(wiimote_mapping(0).starts_with("Device = DSUClient/0/PepoMote\nSource = 1\n"));
-        assert!(wiimote_mapping(2).starts_with("Device = DSUClient/2/PepoMote\n"));
+    fn el_device_va_tal_cual_en_el_mapeo() {
+        // El PC: un servidor, N slots. La party: N servidores, slot 0.
+        assert!(wiimote_mapping("DSUClient/0/PepoMote")
+            .starts_with("Device = DSUClient/0/PepoMote\nSource = 1\n"));
+        assert!(wiimote_mapping("DSUClient/2/PepoMote")
+            .starts_with("Device = DSUClient/2/PepoMote\n"));
+        assert!(wiimote_mapping("DSUClient/0/PepoMote-P3")
+            .starts_with("Device = DSUClient/0/PepoMote-P3\n"));
         assert!(nunchuk_mapping(3).contains("Nunchuk/Buttons/C = `DSUClient/3/PepoMote:Cross`"));
     }
 
     #[test]
-    fn entrada_dsu_sin_punto_y_coma() {
-        assert_eq!(dsu_entry("127.0.0.1", 26760), "PepoMote:127.0.0.1:26760");
-        assert_eq!(dsu_entry("192.168.1.42", 26760), "PepoMote:192.168.1.42:26760");
+    fn el_jugador_da_nombre_al_servidor() {
+        assert_eq!(player_name(1), "PepoMote-P1");
+        assert_eq!(player_name(4), "PepoMote-P4");
     }
 
     #[test]
-    fn dsu_client_ini_completo() {
-        let ini = dsu_client_ini("192.168.1.42", 26760);
+    fn entrada_dsu_sin_punto_y_coma() {
+        assert_eq!(dsu_entry("PepoMote", "127.0.0.1", 26760), "PepoMote:127.0.0.1:26760");
         assert_eq!(
-            ini,
-            "[Server]\nEnabled = True\nEntries = PepoMote:192.168.1.42:26760;\n"
+            dsu_entry("PepoMote-P2", "192.168.1.42", 26760),
+            "PepoMote-P2:192.168.1.42:26760"
         );
     }
 
     #[test]
+    fn dsu_client_ini_de_un_solo_movil() {
+        let ini = dsu_client_ini(&["192.168.1.42"], 26760);
+        assert_eq!(
+            ini,
+            "[Server]\nEnabled = True\nEntries = PepoMote-P1:192.168.1.42:26760;\n"
+        );
+    }
+
+    #[test]
+    fn dsu_client_ini_de_la_party_lista_a_todos() {
+        let ini = dsu_client_ini(&["192.168.1.42", "192.168.1.43", "192.168.1.44"], 26760);
+        assert_eq!(
+            ini,
+            "[Server]\nEnabled = True\nEntries = PepoMote-P1:192.168.1.42:26760;\
+             PepoMote-P2:192.168.1.43:26760;PepoMote-P3:192.168.1.44:26760;\n"
+        );
+    }
+
+    /// Si el nombre de `Entries` y el de `Device` se desincronizaran, Dolphin
+    /// no encontraría nada y el fallo sería mudo: los dos salen de player_name.
+    #[test]
+    fn el_nombre_de_entries_y_el_del_device_son_el_mismo() {
+        let hosts = ["10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.4"];
+        let server = dsu_client_ini(&hosts, 26760);
+        let wiimotes = wiimote_new_ini(hosts.len());
+        for n in 1..=hosts.len() {
+            let name = player_name(n);
+            assert!(server.contains(&format!("{name}:{}:26760;", hosts[n - 1])), "falta {name}");
+            assert!(
+                wiimotes.contains(&format!("Device = DSUClient/0/{name}\n")),
+                "el Wiimote{n} no apunta a {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn la_party_enciende_un_mando_por_jugador_y_apaga_el_resto() {
+        let ini = wiimote_new_ini(3);
+        assert_eq!(ini.matches("Source = 1").count(), 3, "un mando por jugador");
+        for n in 1..=3 {
+            assert!(ini.contains(&format!("[Wiimote{n}]\nDevice = DSUClient/0/PepoMote-P{n}\n")));
+        }
+        assert!(ini.contains("[Wiimote4]\nSource = 0\n"), "el cuarto se apaga");
+        assert_eq!(ini.matches("Extension = None").count(), 3, "ninguno lleva Nunchuk");
+    }
+
+    /// Dolphin emula cuatro: un quinto no cabe y pedirlo no debe colarse.
+    #[test]
+    fn la_party_se_corta_en_max_players() {
+        let ini = wiimote_new_ini(9);
+        assert_eq!(ini.matches("Source = 1").count(), MAX_PLAYERS);
+        assert!(!ini.contains("[Wiimote5]"));
+    }
+
+    #[test]
     fn wiimote_new_ini_enciende_uno_y_apaga_los_demas() {
-        let ini = wiimote_new_ini(0);
-        assert!(ini.starts_with("[Wiimote1]\nDevice = DSUClient/0/PepoMote\nSource = 1\n"));
+        let ini = wiimote_new_ini(1);
+        assert!(ini.starts_with("[Wiimote1]\nDevice = DSUClient/0/PepoMote-P1\nSource = 1\n"));
         assert!(ini.contains("IMUIR/Recenter = `Touch Button`\n"));
         assert!(ini.contains("IMUIR/Enabled = True\n"));
         // Dolphin llama IMUIR al grupo; con IMUPointer no lee nada y en
