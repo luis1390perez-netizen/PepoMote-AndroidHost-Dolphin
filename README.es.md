@@ -1,3 +1,22 @@
+> ## Sobre este fork
+>
+> Este fork añade **multijugador al modo «Dolphin en Android»**: hasta **cuatro móviles** como cuatro Mandos de Wii contra un mismo Dolphin corriendo en otro dispositivo Android — sin ningún PC de por medio.
+>
+> **Qué hace.** Un móvil monta una «party»: enseña un código QR, los demás lo escanean para unirse, y el anfitrión escribe los dos archivos de configuración de Dolphin que nombran a todos. Cada jugador aparece entonces en Dolphin como su propio mando.
+>
+> **Cómo lo hace.** El cliente DSU de Dolphin admite *varios servidores a la vez* (las entradas de `DSUClient.ini` van separadas por punto y coma). Así que cada móvil sigue sirviendo su **propio** servidor DSU en su propia IP, directo a Dolphin — el tráfico de juego no pasa nunca por el anfitrión, con lo que no hay latencia añadida ni un único punto de fallo. El anfitrión coordina, no reenvía: lo único que hace es recoger las IPs de los demás por un canal TCP pequeño (puerto 26761) para poder generar los INI. Los números de jugador son posicionales y van sincronizados con los nombres que reparten los archivos (`PepoMote-P1`, `PepoMote-P2`…), así que lo que dice la pantalla y lo que enseña Dolphin no pueden contradecirse. Un móvil invitado recuerda la party y se reengancha solo, con reintentos crecientes, si se cae el Wi-Fi.
+>
+> **Qué arregla** (fallos que siguen presentes en el proyecto original):
+>
+> - **El puntero por IMU no funcionaba nunca.** La configuración usaba el prefijo `IMUPointer/`, pero Dolphin llama a ese grupo de controles **`IMUIR`** — así que nunca leía esas líneas. El botón de recentrado se quedaba sin mapear en silencio y el `Total Yaw` se quedaba en su valor por defecto. Pasaba desapercibido en escritorio porque allí el grupo viene *activado de fábrica*; en Android nace **desactivado**, lo que dejaba el puntero completamente muerto. (También se escribía `Total Pitch`, que no existe en Dolphin.)
+> - **Compartir los archivos de configuración mandaba el texto, no un archivo.** El botón Compartir usaba un intent de texto plano, así que había que pegar el contenido a mano en un editor. Ahora comparte un archivo de verdad, con su nombre correcto, listo para dejarlo en la carpeta de Dolphin.
+>
+> **Descarga:** [APK más reciente](https://github.com/HolmanAlv/PepoMote-AndroidHost-Dolphin/releases/latest) · **Guía:** [docs/DOLPHIN-ANDROID.md](docs/DOLPHIN-ANDROID.md) · **Protocolo:** [protocol/PROTOCOL.md](protocol/PROTOCOL.md) §7
+>
+> La rama `main` de este fork sigue al proyecto original sin tocar. Todo lo descrito arriba vive en la rama `dolphin-android-party`. Proyecto original de [pepitolas13](https://github.com/pepitolas13/PepoMote).
+
+---
+
 <p align="center"><img src="assets/brand/logo.png" width="96" alt="PepoMote"></p>
 
 <h1 align="center">PepoMote</h1>

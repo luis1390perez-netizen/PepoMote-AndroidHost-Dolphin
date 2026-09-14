@@ -1,3 +1,22 @@
+> ## About this fork
+>
+> This fork adds **multiplayer to the "Dolphin on Android" mode**: up to **four phones** acting as four Wii Remotes against a single Dolphin running on another Android device — no PC anywhere in the setup.
+>
+> **What it does.** One phone hosts a "party": it shows a QR code, the others scan it to join, and the host writes the two Dolphin config files that name everybody. Each player then shows up in Dolphin as its own controller.
+>
+> **How it works.** Dolphin's DSU client accepts *several servers at once* (the entries in `DSUClient.ini` are semicolon-separated). So every phone keeps serving its **own** DSU server on its own IP, straight to Dolphin — game traffic never passes through the host, which means no added latency and no single point of failure. The host is a coordinator, not a relay: all it does is collect the other phones' IPs over a small TCP channel (port 26761) so it can generate the INIs. Player numbers are positional and stay in sync with the names the files hand out (`PepoMote-P1`, `PepoMote-P2`…), so what the screen says and what Dolphin shows can never disagree. An invited phone remembers the party and reconnects on its own, with backoff, if the Wi-Fi drops.
+>
+> **What it fixes** (bugs that are still present upstream):
+>
+> - **The IMU pointer never actually worked.** The config used the key prefix `IMUPointer/`, but Dolphin calls that control group **`IMUIR`** — so Dolphin never read those lines. The "recenter" button was silently unmapped and `Total Yaw` stayed at its default. It went unnoticed on desktop because the group is *enabled by default* there; on Android it defaults to **disabled**, which left the pointer completely dead. (`Total Pitch` was also being written and doesn't exist in Dolphin at all.)
+> - **Sharing the config files sent the text, not a file.** The Share button used a plain-text intent, so you had to paste the contents into an editor by hand. It now shares a real file, named correctly, ready to drop into Dolphin's folder.
+>
+> **Download:** [latest APK](https://github.com/HolmanAlv/PepoMote-AndroidHost-Dolphin/releases/latest) · **Guide:** [docs/DOLPHIN-ANDROID.md](docs/DOLPHIN-ANDROID.md) · **Protocol:** [protocol/PROTOCOL.md](protocol/PROTOCOL.md) §7
+>
+> The `main` branch of this fork tracks the original project untouched. Everything described above lives on the `dolphin-android-party` branch. Original project by [pepitolas13](https://github.com/pepitolas13/PepoMote).
+
+---
+
 <p align="center"><img src="assets/brand/logo.png" width="96" alt="PepoMote"></p>
 
 <h1 align="center">PepoMote</h1>
