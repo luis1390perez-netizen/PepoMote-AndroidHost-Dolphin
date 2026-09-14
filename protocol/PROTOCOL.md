@@ -139,3 +139,30 @@ El receptor captura solo mientras hay algún móvil suscrito, a 30 fps como máx
 ## 6. Vectores dorados (`vectors/`)
 
 Cada `.hex` es un paquete completo en hex ASCII (sin espacios) + un `.json` hermano con los valores decodificados esperados. Tests: Kotlin (`PmpCodecTest`) y Rust (`codec::tests`) parsean el mismo hex y comparan contra el json. Vectores mínimos: `input_neutral`, `input_buttons_all`, `input_motion`, `input_nunchuk` (flags 0x03, stick (100, −50), C+Z), `input_wiiu` (80 bytes, flags 0x0F, sticks (100, −50) y (−30, 120), táctil (0x8000, 0x4000), botones 0x1FF80001), `ping`, `pong`. Los valores esperados están en los propios tests (Rust y Kotlin), no hay `.json` hermanos.
+
+## 7. Canal de party (TCP 26761, móvil a móvil)
+
+Solo en el modo «Dolphin en Android» (`docs/DOLPHIN-ANDROID.md`), donde no hay PC: varios móviles sirven cada uno su propio DSU al mismo Dolphin. Este canal **no lleva telemetría** — el tráfico de juego va directo de cada móvil a Dolphin por el 26760/UDP —; solo sirve para que el anfitrión sepa las IPs de los demás y pueda escribir los dos INI que los nombran a todos.
+
+El anfitrión (Jugador 1) escucha en el **26761/TCP** y lo anuncia como QR, con el mismo esquema que el emparejamiento con el PC:
+
+```
+pepomote://party?v=1&host=<ip>&port=<tcp>&name=<url-encoded>
+```
+
+Una línea JSON por mensaje, terminada en `\n`, como el canal de control. Máximo 4096 bytes por línea: más es basura y la conexión se corta.
+
+| Sentido | Mensaje |
+|---|---|
+| invitado → anfitrión | `{"m":"join","v":1,"name":"<nombre del móvil>"}` |
+| anfitrión → invitado | `{"m":"player","n":<2..4>}` |
+| anfitrión → invitado | `{"m":"err","e":"party_full"}` y cierra |
+| invitado → anfitrión | `{"m":"ping"}` cada 3 s |
+
+`player` se manda al aceptar **y como respuesta a cada `ping`**: el número va por posición y cambia si alguien se va, así que el invitado se entera de que se ha corrido de sitio, y de paso tiene tráfico que leer para notar que el anfitrión ha muerto (si solo escribiera, TCP tardaría minutos en fallar).
+
+La IP de cada invitado la toma el anfitrión **del socket**, nunca del mensaje: es el dato que acaba dentro del `DSUClient.ini` de Dolphin. Solo se admite IPv4 — un `:` de IPv6 dentro de una entrada `descripción:dirección:puerto` rompería el parseo de Dolphin sin decir nada.
+
+El anfitrión da por muerto a quien lleve 10 s sin mandar nada y lo saca de la lista; el invitado reintenta con la misma escala que el enlace con el PC (1, 2, 4, 8, 15 s, rendición a los 2 min).
+
+**Este canal no tiene autenticación**, a diferencia del emparejamiento con el PC. Es una decisión consciente: lo máximo que consigue alguien de la misma Wi-Fi es ocupar un puesto de jugador y meter su IP en el INI. No hay token porque no hay nada que proteger — ni inyección en el SO ni acceso a archivos. Si algún día molesta, el código de 4 dígitos del §2 es el camino.

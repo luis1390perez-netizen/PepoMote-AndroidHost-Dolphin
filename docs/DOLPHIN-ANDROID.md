@@ -1,16 +1,20 @@
 # Dolphin en Android — sin PC
 
 Dolphin corre en una tablet (o en otro móvil, o en una consola portátil con
-Android) y **este** móvil es el mando de Wii. No hace falta PC, ni el
-receptor, ni emparejar nada: el móvil abre él mismo un servidor DSU
-(cemuhook) y Dolphin se conecta a él por la Wi-Fi.
+Android) y **el móvil (o los móviles)** son los mandos de Wii. No hace falta
+PC, ni el receptor, ni emparejar nada: cada móvil abre su propio servidor DSU
+(cemuhook) y Dolphin se conecta directamente a él por la Wi-Fi.
 
 ```
-Móvil (PepoMote)  ──DSU/UDP 26760──>  Tablet con Dolphin
+Móvil P1 (PepoMote)  ──DSU/UDP 26760──┐
+Móvil P2 (PepoMote)  ──DSU/UDP 26760──┼──>  Tablet con Dolphin
+Móvil P3 (PepoMote)  ──DSU/UDP 26760──┘
 ```
 
-Hacen falta **dos dispositivos**: el que juega y el que se sostiene en la
-mano. Los dos en la misma Wi-Fi.
+Hacen falta al menos **dos dispositivos**: el que juega y el que se sostiene
+en la mano. Hasta cuatro móviles pueden jugar a la vez contra el mismo
+Dolphin — es «la party» —, cada uno sirviendo su propio DSU: el tráfico de
+juego nunca pasa por otro móvil. Todos en la misma Wi-Fi.
 
 ## Por qué hay que tocar dos archivos a mano
 
@@ -46,13 +50,46 @@ los dos archivos ya escritos y los colocas tú, una sola vez.
    Con Dolphin **cerrado**: al salir reescribe su configuración y se llevaría
    por delante lo que acabas de poner.
 3. Abre Dolphin → **Mando** → **Mando de Wii 1** → **Emulado**. En la lista de
-   dispositivos tiene que aparecer `DSUClient/0/PepoMote`. Si no aparece,
+   dispositivos tiene que aparecer `DSUClient/0/PepoMote-P1`. Si no aparece,
    cierra y vuelve a abrir Dolphin con el móvil ya mandando.
 4. En el móvil, **Abrir el mando**. Apunta, agita, juega.
 
 Cuando Dolphin se engancha, la pantalla del móvil pasa de «Esperando a
 Dolphin…» a «Dolphin conectado». Esa es la señal de que los archivos
 quedaron bien: si no cambia, el problema está en el paso 2, no en el móvil.
+
+## Varios mandos (la party)
+
+Hasta cuatro móviles contra el mismo Dolphin. Cada uno sirve su **propio**
+servidor DSU: el anfitrión no reenvía nada, solo recoge las IPs para poder
+escribir los dos archivos con todos dentro.
+
+1. En **todos** los móviles: **Dolphin en Android** → **Empezar a mandar**.
+2. El primero (el Jugador 1) enseña un **código QR** bajo la lista de
+   jugadores.
+3. En cada uno de los demás: **Unirse a la party de otro móvil** y escanear
+   ese QR. Al hacerlo aparecen en la lista del anfitrión, y su propia pantalla
+   dice «Unido a la party como Jugador 2», 3 o 4.
+4. Los dos archivos que enseña **el anfitrión** ya nombran a todos. Cópialos
+   al dispositivo de Dolphin como en el paso a paso de arriba, con Dolphin
+   **cerrado**.
+5. En Dolphin, **Mando de Wii 1**, **2**… → **Emulado**: cada uno tiene que
+   ver su `DSUClient/0/PepoMote-P1`, `PepoMote-P2`…
+
+Dos cosas que dan problemas si se hacen al revés:
+
+- **Todos los móviles tienen que estar sirviendo ANTES de abrir Dolphin.** El
+  que falte no saldrá en su lista de dispositivos, y no se entera después: hay
+  que cerrar Dolphin y volver a abrirlo.
+- **Si cambia una IP hay que regenerar y recopiar los archivos**, porque van
+  escritas dentro. Ver «La IP» aquí abajo.
+
+El número de jugador va por orden de llegada, y si alguien se va los de detrás
+se corren: los archivos y las pantallas se recalculan juntos, así que si
+alguien abandona la partida hay que volver a copiarlos.
+
+Para salir de una party, **Salir de la party** en la pantalla del invitado. Si
+no, ese móvil se reengancha solo cada vez que vuelve a mandar.
 
 ## La IP
 
@@ -66,14 +103,13 @@ copiar el archivo. Dos maneras de que no cambie nunca:
 
 ## Qué funciona y qué no
 
-Este modo emula **un Mando de Wii** con movimiento y botones: acelerómetro,
+Este modo emula **Mandos de Wii** con movimiento y botones: acelerómetro,
 giroscopio, puntero por IMU (`IMUIR`, con el recentrado en el botón de
-apuntar) y batería. Basta para Wii Sports.
+apuntar) y batería. Hasta cuatro a la vez. Basta para Wii Sports.
 
-Lo que **no** hay aquí, y sí en el receptor de PC: Nunchuk, jugadores 2-4 y
-el modo Wii U (Cemu no existe en Android). Tampoco el modo puntero, que
-necesita mover el cursor del sistema operativo — imposible en un Android sin
-root.
+Lo que **no** hay aquí, y sí en el receptor de PC: Nunchuk y el modo Wii U
+(Cemu no existe en Android). Tampoco el modo puntero, que necesita mover el
+cursor del sistema operativo — imposible en un Android sin root.
 
 ## Si no va
 
@@ -91,6 +127,9 @@ falla es la configuración de Dolphin (paso 2 o 3). Si no se ve nada:
 - ¿están los dos en la misma Wi-Fi? (algunas redes de invitados aíslan a los
   clientes entre sí: usa el hotspot del móvil);
 - ¿está el móvil «mandando» (la pantalla dice «Sirviendo en …»)?
+
+Con varios mandos, `dsu_probe.py` se apunta a **cada** móvil por separado: así
+se sabe cuál de ellos es el que no está sirviendo, sin tocar Dolphin.
 
 ## Para quien toque el código
 
