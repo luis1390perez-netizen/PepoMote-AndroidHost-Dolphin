@@ -570,7 +570,7 @@ git commit -m "party: reparto de numeros de jugador y caida por silencio"
 - Produces (los usan las Tasks 7 y 8):
   - `object Party { const val PORT = 26761 }`
   - `class PartyHost(port: Int = Party.PORT)` con `fun start()`, `fun stop()`, `val guests: StateFlow<List<PartyPlayer>>`
-  - `class PartyGuest(host: String, port: Int)` con `fun start()`, `fun stop()`, `val player: StateFlow<Int?>`
+  - `class PartyGuest(host: String, port: Int = Party.PORT, name: String = Party.deviceName())` con `fun start()`, `fun stop()`, `val player: StateFlow<Int?>`
 
 - [ ] **Step 1: Escribir el test que falla**
 
@@ -593,7 +593,9 @@ class PartyTest {
         val anfitrion = PartyHost(port)
         anfitrion.start()
         try {
-            val invitado = PartyGuest("127.0.0.1", port)
+            // el nombre se inyecta: Party.deviceName() lee android.os.Build y
+            // en un test de JVM esos campos llegan vacios
+            val invitado = PartyGuest("127.0.0.1", port, "Pixel de prueba")
             invitado.start()
             try {
                 esperaA { invitado.player.value == 2 }
@@ -753,7 +755,11 @@ class PartyHost(private val port: Int = Party.PORT) {
 }
 
 /** El invitado: se une al anfitrión y le da señales de vida. */
-class PartyGuest(private val host: String, private val port: Int = Party.PORT) {
+class PartyGuest(
+    private val host: String,
+    private val port: Int = Party.PORT,
+    private val name: String = Party.deviceName(),
+) {
 
     private val _player = MutableStateFlow<Int?>(null)
     val player: StateFlow<Int?> = _player
@@ -771,7 +777,7 @@ class PartyGuest(private val host: String, private val port: Int = Party.PORT) {
                 socket = s
                 val reader = s.getInputStream().bufferedReader()
                 val writer = s.getOutputStream().bufferedWriter()
-                writer.write(Party.joinMessage(Party.deviceName()))
+                writer.write(Party.joinMessage(name))
                 writer.write("\n")
                 writer.flush()
                 val respuesta = JSONObject(reader.readLine() ?: return@thread)
