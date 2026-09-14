@@ -10,7 +10,7 @@ use crate::MAX_PLAYERS;
 
 /// Mapeo validado contra Dolphin real (h3): botones por bytes analógicos,
 /// cruceta "Pad N/S/W/E", IMU completo y recentrado por botón Touch.
-/// {DEV} = índice de pad del cliente DSU (slot).
+/// {DEV} = device DSU completo ya montado por quien llama.
 ///
 /// El grupo del puntero por IMU se llama `IMUIR` y NO `IMUPointer` (en
 /// Dolphin la clase es IMUCursor pero el nombre que va al INI es "IMUIR":
