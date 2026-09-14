@@ -1,19 +1,44 @@
-> ## About this fork
->
-> This fork adds **multiplayer to the "Dolphin on Android" mode**: up to **four phones** acting as four Wii Remotes against a single Dolphin running on another Android device — no PC anywhere in the setup.
->
-> **What it does.** One phone hosts a "party": it shows a QR code, the others scan it to join, and the host writes the two Dolphin config files that name everybody. Each player then shows up in Dolphin as its own controller.
->
-> **How it works.** Dolphin's DSU client accepts *several servers at once* (the entries in `DSUClient.ini` are semicolon-separated). So every phone keeps serving its **own** DSU server on its own IP, straight to Dolphin — game traffic never passes through the host, which means no added latency and no single point of failure. The host is a coordinator, not a relay: all it does is collect the other phones' IPs over a small TCP channel (port 26761) so it can generate the INIs. Player numbers are positional and stay in sync with the names the files hand out (`PepoMote-P1`, `PepoMote-P2`…), so what the screen says and what Dolphin shows can never disagree. An invited phone remembers the party and reconnects on its own, with backoff, if the Wi-Fi drops.
->
-> **What it fixes** (bugs that are still present upstream):
->
-> - **The IMU pointer never actually worked.** The config used the key prefix `IMUPointer/`, but Dolphin calls that control group **`IMUIR`** — so Dolphin never read those lines. The "recenter" button was silently unmapped and `Total Yaw` stayed at its default. It went unnoticed on desktop because the group is *enabled by default* there; on Android it defaults to **disabled**, which left the pointer completely dead. (`Total Pitch` was also being written and doesn't exist in Dolphin at all.)
-> - **Sharing the config files sent the text, not a file.** The Share button used a plain-text intent, so you had to paste the contents into an editor by hand. It now shares a real file, named correctly, ready to drop into Dolphin's folder.
->
-> **Download:** [latest APK](https://github.com/HolmanAlv/PepoMote-AndroidHost-Dolphin/releases/latest) · **Guide:** [docs/DOLPHIN-ANDROID.md](docs/DOLPHIN-ANDROID.md) · **Protocol:** [protocol/PROTOCOL.md](protocol/PROTOCOL.md) §7
->
-> The `main` branch of this fork tracks the original project untouched. Everything described above lives on the `dolphin-android-party` branch. Original project by [pepitolas13](https://github.com/pepitolas13/PepoMote).
+<p align="center"><img src="assets/brand/logo.png" width="72" alt=""></p>
+
+<h2 align="center">Party mode — four phones, one Dolphin</h2>
+
+<p align="center">
+A fork of <a href="https://github.com/pepitolas13/PepoMote">PepoMote</a> that adds <b>local multiplayer</b> to the «Dolphin on Android» mode.<br>
+Up to <b>four phones</b> become four Wii Remotes against a single Dolphin running on another Android device — no PC anywhere.
+</p>
+
+<p align="center">
+<a href="https://github.com/HolmanAlv/PepoMote-AndroidHost-Dolphin/releases/latest"><b>Download the APK</b></a>
+ · <a href="docs/DOLPHIN-ANDROID.md">Setup guide</a>
+ · <a href="protocol/PROTOCOL.md">Protocol §7</a>
+</p>
+
+```
+Phone P1  ──DSU/UDP 26760──┐
+Phone P2  ──DSU/UDP 26760──┼──▶   Dolphin  (another Android device)
+Phone P3  ──DSU/UDP 26760──┘
+     ╰── QR + TCP 26761 ──╯
+         (host, setup only)
+```
+
+One phone hosts the party: it shows a QR code, the others scan it to join, and it writes the two Dolphin config files naming everybody. Then each player appears in Dolphin as their own controller.
+
+**The trick:** Dolphin's DSU client accepts *several servers at once*. So every phone keeps serving its **own** DSU server straight to Dolphin — the host is a coordinator, never a relay. Game traffic doesn't pass through it, so there's no added latency and no single point of failure. All the host does is collect the others' IPs over a small TCP channel so it can generate the files. A guest remembers the party and reconnects on its own, with backoff, if the Wi-Fi drops.
+
+### What it also fixes
+
+Two bugs that are still present upstream:
+
+| Bug | Why nobody noticed |
+|---|---|
+| **The IMU pointer never worked.** The config wrote `IMUPointer/…`, but Dolphin calls that control group **`IMUIR`** — those lines were never read. The recenter button was silently unmapped and `Total Yaw` stayed at its default. | On desktop that group is *enabled by default*, so the pointer worked anyway. On Android it defaults to **disabled**, which left it completely dead. (`Total Pitch` was also being written; it doesn't exist in Dolphin.) |
+| **Sharing the config files sent the text, not a file.** You had to paste the contents into an editor by hand. | It now shares a real file, correctly named, ready to drop into Dolphin's folder. |
+
+### A note on how this was built
+
+This whole feature — design, implementation, tests and docs — was written with **[Claude Code](https://claude.com/claude-code)**, start to finish. It builds and every test passes, but it has had limited testing on real hardware, so expect rough edges. Bug reports are welcome.
+
+The `main` branch here tracks the original project untouched; this work lives on `dolphin-android-party`.
 
 ---
 

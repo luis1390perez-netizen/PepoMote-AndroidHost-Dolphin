@@ -1,19 +1,44 @@
-> ## Sobre este fork
->
-> Este fork añade **multijugador al modo «Dolphin en Android»**: hasta **cuatro móviles** como cuatro Mandos de Wii contra un mismo Dolphin corriendo en otro dispositivo Android — sin ningún PC de por medio.
->
-> **Qué hace.** Un móvil monta una «party»: enseña un código QR, los demás lo escanean para unirse, y el anfitrión escribe los dos archivos de configuración de Dolphin que nombran a todos. Cada jugador aparece entonces en Dolphin como su propio mando.
->
-> **Cómo lo hace.** El cliente DSU de Dolphin admite *varios servidores a la vez* (las entradas de `DSUClient.ini` van separadas por punto y coma). Así que cada móvil sigue sirviendo su **propio** servidor DSU en su propia IP, directo a Dolphin — el tráfico de juego no pasa nunca por el anfitrión, con lo que no hay latencia añadida ni un único punto de fallo. El anfitrión coordina, no reenvía: lo único que hace es recoger las IPs de los demás por un canal TCP pequeño (puerto 26761) para poder generar los INI. Los números de jugador son posicionales y van sincronizados con los nombres que reparten los archivos (`PepoMote-P1`, `PepoMote-P2`…), así que lo que dice la pantalla y lo que enseña Dolphin no pueden contradecirse. Un móvil invitado recuerda la party y se reengancha solo, con reintentos crecientes, si se cae el Wi-Fi.
->
-> **Qué arregla** (fallos que siguen presentes en el proyecto original):
->
-> - **El puntero por IMU no funcionaba nunca.** La configuración usaba el prefijo `IMUPointer/`, pero Dolphin llama a ese grupo de controles **`IMUIR`** — así que nunca leía esas líneas. El botón de recentrado se quedaba sin mapear en silencio y el `Total Yaw` se quedaba en su valor por defecto. Pasaba desapercibido en escritorio porque allí el grupo viene *activado de fábrica*; en Android nace **desactivado**, lo que dejaba el puntero completamente muerto. (También se escribía `Total Pitch`, que no existe en Dolphin.)
-> - **Compartir los archivos de configuración mandaba el texto, no un archivo.** El botón Compartir usaba un intent de texto plano, así que había que pegar el contenido a mano en un editor. Ahora comparte un archivo de verdad, con su nombre correcto, listo para dejarlo en la carpeta de Dolphin.
->
-> **Descarga:** [APK más reciente](https://github.com/HolmanAlv/PepoMote-AndroidHost-Dolphin/releases/latest) · **Guía:** [docs/DOLPHIN-ANDROID.md](docs/DOLPHIN-ANDROID.md) · **Protocolo:** [protocol/PROTOCOL.md](protocol/PROTOCOL.md) §7
->
-> La rama `main` de este fork sigue al proyecto original sin tocar. Todo lo descrito arriba vive en la rama `dolphin-android-party`. Proyecto original de [pepitolas13](https://github.com/pepitolas13/PepoMote).
+<p align="center"><img src="assets/brand/logo.png" width="72" alt=""></p>
+
+<h2 align="center">Modo party — cuatro móviles, un Dolphin</h2>
+
+<p align="center">
+Un fork de <a href="https://github.com/pepitolas13/PepoMote">PepoMote</a> que añade <b>multijugador local</b> al modo «Dolphin en Android».<br>
+Hasta <b>cuatro móviles</b> se convierten en cuatro Mandos de Wii contra un mismo Dolphin corriendo en otro dispositivo Android — sin ningún PC.
+</p>
+
+<p align="center">
+<a href="https://github.com/HolmanAlv/PepoMote-AndroidHost-Dolphin/releases/latest"><b>Descargar el APK</b></a>
+ · <a href="docs/DOLPHIN-ANDROID.md">Guía de instalación</a>
+ · <a href="protocol/PROTOCOL.md">Protocolo §7</a>
+</p>
+
+```
+Móvil P1  ──DSU/UDP 26760──┐
+Móvil P2  ──DSU/UDP 26760──┼──▶   Dolphin  (otro dispositivo Android)
+Móvil P3  ──DSU/UDP 26760──┘
+     ╰── QR + TCP 26761 ──╯
+       (anfitrión, solo al montar)
+```
+
+Un móvil monta la party: enseña un código QR, los demás lo escanean para unirse, y él escribe los dos archivos de configuración de Dolphin que nombran a todos. Después cada jugador aparece en Dolphin como su propio mando.
+
+**La clave:** el cliente DSU de Dolphin admite *varios servidores a la vez*. Así que cada móvil sigue sirviendo su **propio** servidor DSU directo a Dolphin — el anfitrión coordina, nunca reenvía. El tráfico de juego no pasa por él, así que no añade latencia ni es un único punto de fallo. Lo único que hace es recoger las IPs de los demás por un canal TCP pequeño para poder generar los archivos. Un invitado recuerda la party y se reengancha solo, con reintentos crecientes, si se cae el Wi-Fi.
+
+### Lo que además arregla
+
+Dos fallos que siguen presentes en el proyecto original:
+
+| El fallo | Por qué no se notaba |
+|---|---|
+| **El puntero por IMU no funcionaba nunca.** La configuración escribía `IMUPointer/…`, pero Dolphin llama a ese grupo de controles **`IMUIR`** — esas líneas no las leía nadie. El botón de recentrado se quedaba sin mapear en silencio y el `Total Yaw` en su valor por defecto. | En escritorio ese grupo viene *activado de fábrica*, así que el puntero funcionaba igual. En Android nace **desactivado**, lo que lo dejaba completamente muerto. (También se escribía `Total Pitch`, que no existe en Dolphin.) |
+| **Compartir los archivos mandaba el texto, no un archivo.** Había que pegar el contenido a mano en un editor. | Ahora comparte un archivo de verdad, con su nombre correcto, listo para dejarlo en la carpeta de Dolphin. |
+
+### Sobre cómo se hizo esto
+
+Toda esta funcionalidad — diseño, implementación, tests y documentación — está escrita con **[Claude Code](https://claude.com/claude-code)**, de principio a fin. Compila y pasa todos los tests, pero se ha probado poco en hardware real, así que es de esperar que tenga aristas. Los reportes de fallos son bienvenidos.
+
+La rama `main` de aquí sigue al proyecto original sin tocar; este trabajo vive en `dolphin-android-party`.
 
 ---
 
