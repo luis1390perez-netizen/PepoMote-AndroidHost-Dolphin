@@ -1,5 +1,6 @@
 package dev.pepotech.pepomote.service
 
+import dev.pepotech.pepomote.net.PartyPlayer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -28,4 +29,13 @@ object DsuState {
     fun publish(state: Ui) {
         _flow.value = state
     }
+
+    /** Los invitados de la party, vacío si se juega solo. */
+    val guests: MutableStateFlow<List<PartyPlayer>> = MutableStateFlow(emptyList())
+
+    /** Si este móvil se unió a la party de otro: su número de jugador. */
+    val joinedAs: MutableStateFlow<Int?> = MutableStateFlow(null)
+
+    /** Se intentó entrar en una party llena. */
+    val partyFull: MutableStateFlow<Boolean> = MutableStateFlow(false)
 }

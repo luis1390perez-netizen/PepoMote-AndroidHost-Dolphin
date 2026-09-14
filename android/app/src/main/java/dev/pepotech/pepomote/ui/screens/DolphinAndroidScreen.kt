@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -28,8 +30,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -38,6 +42,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.net.DsuServer
+import dev.pepotech.pepomote.net.Party
+import dev.pepotech.pepomote.net.PartyRoster
+import dev.pepotech.pepomote.net.PartyStore
+import dev.pepotech.pepomote.service.DsuForegroundService
 import dev.pepotech.pepomote.service.DsuState
 import dev.pepotech.pepomote.ui.theme.PepoColors
 import java.io.File
@@ -54,13 +62,18 @@ fun DolphinAndroidScreen(
     onPlay: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onJoin: () -> Unit
 ) {
     val context = LocalContext.current
     val state by DsuState.flow.collectAsState()
     val serving = state as? DsuState.Ui.Serving
     val ip = serving?.ip ?: DsuServer.localIp()
     val clients = serving?.clients ?: 0
+    val guests by DsuState.guests.collectAsState()
+    val joinedAs by DsuState.joinedAs.collectAsState()
+    val partyFull by DsuState.partyFull.collectAsState()
+    val hosts = listOf(ip ?: "0.0.0.0") + guests.map { it.host }
 
     Column(
         modifier = Modifier
@@ -102,6 +115,48 @@ fun DolphinAndroidScreen(
             }
         }
 
+        Spacer(Modifier.height(16.dp))
+        InfoCard {
+            if (joinedAs == null) {
+                Text(stringResource(R.string.party_title), style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.party_me, 1), style = MaterialTheme.typography.bodyMedium)
+                guests.forEach { g ->
+                    Text(
+                        stringResource(R.string.party_guest, g.player, g.name),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                if (ip != null && guests.size < PartyRoster.MAX_PLAYERS - 1) {
+                    Spacer(Modifier.height(12.dp))
+                    QrCode(PartyStore.inviteUrl(ip, Party.deviceName()))
+                    Spacer(Modifier.height(6.dp))
+                    Text(stringResource(R.string.party_scan_me), style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onJoin) { Text(stringResource(R.string.party_join)) }
+            } else {
+                Text(
+                    stringResource(R.string.party_joined, joinedAs ?: 0),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = {
+                    PartyStore.forget(context)
+                    DsuForegroundService.stop(context)
+                    DsuForegroundService.start(context)
+                }) { Text(stringResource(R.string.party_leave)) }
+            }
+            if (partyFull) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(R.string.party_full),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PepoColors.Blue
+                )
+            }
+        }
+
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Button(
@@ -125,13 +180,11 @@ fun DolphinAndroidScreen(
         Mono(stringResource(R.string.dsu_setup_path))
 
         Spacer(Modifier.height(16.dp))
-        FileCard(
-            name = "DSUClient.ini",
-            body = DsuServer.dsuClientIni(listOf(ip ?: "0.0.0.0")),
-            context = context
-        )
-        Spacer(Modifier.height(12.dp))
-        FileCard(name = "WiimoteNew.ini", body = DsuServer.wiimoteIni(1), context = context)
+        if (joinedAs == null) {
+            FileCard(name = "DSUClient.ini", body = DsuServer.dsuClientIni(hosts), context = context)
+            Spacer(Modifier.height(12.dp))
+            FileCard(name = "WiimoteNew.ini", body = DsuServer.wiimoteIni(hosts.size), context = context)
+        }
 
         Spacer(Modifier.height(16.dp))
         Text(stringResource(R.string.dsu_setup_then), style = MaterialTheme.typography.bodyMedium)
@@ -154,6 +207,21 @@ private fun InfoCard(content: @Composable () -> Unit) {
     ) {
         Column(Modifier.fillMaxWidth().padding(18.dp)) { content() }
     }
+}
+
+/** El QR que escanean los demás móviles para unirse a esta party. */
+@Composable
+private fun QrCode(text: String, size: Int = 480) {
+    val bitmap = remember(text) {
+        val matrix = com.google.zxing.qrcode.QRCodeWriter()
+            .encode(text, com.google.zxing.BarcodeFormat.QR_CODE, size, size)
+        val pixels = IntArray(size * size) { i ->
+            if (matrix[i % size, i / size]) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+        }
+        android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+            .apply { setPixels(pixels, 0, size, 0, 0, size, size) }
+    }
+    Image(bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.size(220.dp))
 }
 
 /** Un archivo listo para copiar: su contenido tal cual, y los dos botones. */

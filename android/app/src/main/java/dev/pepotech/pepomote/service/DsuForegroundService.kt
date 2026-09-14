@@ -19,6 +19,9 @@ import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.control.LocaleHelper
 import dev.pepotech.pepomote.net.DsuServer
+import dev.pepotech.pepomote.net.PartyGuest
+import dev.pepotech.pepomote.net.PartyHost
+import dev.pepotech.pepomote.net.PartyStore
 import dev.pepotech.pepomote.sensor.MotionEngine
 import dev.pepotech.pepomote.sensor.SenderKind
 
@@ -53,6 +56,8 @@ class DsuForegroundService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var motion: MotionEngine? = null
+    private var partyHost: PartyHost? = null
+    private var partyGuest: PartyGuest? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var poll: Runnable? = null
@@ -88,6 +93,17 @@ class DsuForegroundService : Service() {
             DsuState.publish(DsuState.Ui.Failed(error))
             stopSelf()
             return START_NOT_STICKY
+        }
+
+        // Parar siempre la party anterior antes de crear otra: onStartCommand
+        // puede reentrar sobre el mismo servicio vivo, y sin esto el bind del
+        // 26761 fallaría, el fallo se tragaría en silencio y la party
+        // quedaría muerta con el QR aún en pantalla.
+        partyHost?.stop()
+        partyHost = PartyHost().also { it.start() }
+        partyGuest?.stop()
+        partyGuest = PartyStore.last(this)?.let { invite ->
+            PartyGuest(invite.host, invite.port).also { it.start() }
         }
 
         if (wakeLock?.isHeld != true) acquireLocks()
@@ -126,6 +142,9 @@ class DsuForegroundService : Service() {
             override fun run() {
                 val clients = DsuServer.clients()
                 DsuState.publish(DsuState.Ui.Serving(ip, DsuServer.PORT, clients))
+                DsuState.guests.value = partyHost?.guests() ?: emptyList()
+                DsuState.joinedAs.value = partyGuest?.player?.value
+                DsuState.partyFull.value = partyGuest?.full?.value ?: false
                 // La notificación solo se toca cuando cambia de verdad
                 if (clients != lastClients) {
                     lastClients = clients
@@ -151,6 +170,15 @@ class DsuForegroundService : Service() {
         motion?.stop()
         motion = null
         LinkState.motion = null
+        partyHost?.stop()
+        partyHost = null
+        partyGuest?.stop()
+        partyGuest = null
+        // Si no se limpian, la pantalla seguiría enseñando la lista de
+        // invitados y escondiendo los INI después de parar.
+        DsuState.guests.value = emptyList()
+        DsuState.joinedAs.value = null
+        DsuState.partyFull.value = false
         wakeLock?.release()
         wifiLock?.release()
         // El puerto sigue abierto (el servidor nativo vive lo que el

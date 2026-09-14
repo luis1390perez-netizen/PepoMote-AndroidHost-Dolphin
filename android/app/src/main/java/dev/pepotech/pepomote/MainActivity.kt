@@ -40,6 +40,7 @@ import dev.pepotech.pepomote.control.LocaleHelper
 import dev.pepotech.pepomote.control.UiSounds
 import dev.pepotech.pepomote.net.PairStore
 import dev.pepotech.pepomote.net.Pairing
+import dev.pepotech.pepomote.net.PartyStore
 import dev.pepotech.pepomote.service.DsuForegroundService
 import dev.pepotech.pepomote.service.DsuState
 import dev.pepotech.pepomote.service.LinkFailure
@@ -286,6 +287,13 @@ class MainActivity : ComponentActivity() {
      * si vale, empareja, arranca el enlace con el rol elegido y abre su pantalla.
      */
     internal fun onPairContent(contents: String) {
+        PartyStore.parseInviteUrl(contents)?.let { invite ->
+            PartyStore.remember(this, invite)
+            DsuForegroundService.stop(this)
+            DsuForegroundService.start(this)
+            currentScreen = Screen.DolphinAndroid
+            return
+        }
         val pairing = PairStore.parsePairUrl(contents)
         if (pairing == null) {
             Toast.makeText(this, getString(R.string.qr_not_pepomote), Toast.LENGTH_LONG).show()
@@ -444,7 +452,8 @@ private fun Root(activity: MainActivity) {
             },
             onStart = { DsuForegroundService.start(context) },
             onStop = { DsuForegroundService.stop(context) },
-            onBack = { activity.currentScreen = Screen.Home }
+            onBack = { activity.currentScreen = Screen.Home },
+            onJoin = { scanQr() }
         )
 
         Screen.DsuController -> DsuControllerRoute(activity)

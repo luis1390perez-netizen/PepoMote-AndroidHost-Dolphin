@@ -159,4 +159,12 @@
     <string name="dsu_copy">Copy</string>
     <string name="dsu_share">Share</string>
     <string name="dsu_copied">Copied</string>
+    <string name="party_title">Who\'s playing</string>
+    <string name="party_me">Player %1$d · this phone</string>
+    <string name="party_guest">Player %1$d · %2$s</string>
+    <string name="party_scan_me">Have the others scan this code to join</string>
+    <string name="party_join">Join another phone\'s party</string>
+    <string name="party_joined">Joined the party as Player %1$d</string>
+    <string name="party_leave">Leave the party</string>
+    <string name="party_full">The party is full: there are already four controllers</string>
 </resources>

@@ -159,4 +159,12 @@
     <string name="dsu_copy">Copiar</string>
     <string name="dsu_share">Compartir</string>
     <string name="dsu_copied">Copiado</string>
+    <string name="party_title">Quién juega</string>
+    <string name="party_me">Jugador %1$d · este móvil</string>
+    <string name="party_guest">Jugador %1$d · %2$s</string>
+    <string name="party_scan_me">Que los demás escaneen este código para unirse</string>
+    <string name="party_join">Unirse a la party de otro móvil</string>
+    <string name="party_joined">Unido a la party como Jugador %1$d</string>
+    <string name="party_leave">Salir de la party</string>
+    <string name="party_full">La party está llena: ya hay cuatro mandos</string>
 </resources>
