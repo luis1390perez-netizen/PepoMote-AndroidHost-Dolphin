@@ -35,10 +35,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import dev.pepotech.pepomote.R
 import dev.pepotech.pepomote.net.DsuServer
 import dev.pepotech.pepomote.service.DsuState
 import dev.pepotech.pepomote.ui.theme.PepoColors
+import java.io.File
 
 /**
  * Modo «Dolphin en Android»: este móvil sirve DSU y Dolphin corre en otro
@@ -198,11 +200,21 @@ private fun copy(context: Context, label: String, body: String) {
     }
 }
 
+/**
+ * Comparte el INI como ARCHIVO, no como texto: lo que hay que dejar en la
+ * carpeta de Dolphin es un archivo llamado `DSUClient.ini` o `WiimoteNew.ini`,
+ * y compartir el texto obligaba a pegarlo a mano en un editor (y a que la app
+ * de turno no se comiera las comillas invertidas del mapeo).
+ */
 private fun share(context: Context, name: String, body: String) {
+    val file = File(File(context.cacheDir, "ini").apply { mkdirs() }, name)
+    file.writeText(body)
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_SUBJECT, name)
-        putExtra(Intent.EXTRA_TEXT, body)
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(Intent.createChooser(intent, name))
 }

@@ -81,5 +81,18 @@
                 android:value="true" />
         </service>
 
+        <!-- Compartir los INI de Dolphin como ARCHIVO (no como texto): el
+             destino es la carpeta de Dolphin del otro dispositivo, y ahí hace
+             falta un archivo con su nombre, no un mensaje que pegar -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
 </manifest>

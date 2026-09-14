@@ -76,7 +76,7 @@ impl MotionSample {
     }
 }
 
-/// Duración del pulso del botón Touch al recentrar (IMUPointer/Recenter).
+/// Duración del pulso del botón Touch al recentrar (IMUIR/Recenter).
 const RECENTER_PULSE: Duration = Duration::from_millis(150);
 
 #[derive(Clone, Copy)]

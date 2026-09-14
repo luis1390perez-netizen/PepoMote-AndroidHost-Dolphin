@@ -104,7 +104,7 @@ En este perfil el pulso de recentrado NO toca el byte Touch (es Home); el recent
 
 ## Recentrado
 
-La diana del móvil incrementa `recenter_count` (PMP); el servidor DSU traduce cada flanco en un **pulso de 150 ms del botón Touch**, que el perfil mapea a `IMUPointer/Recenter`. Así el mismo gesto recentra en modo puntero y en Dolphin.
+La diana del móvil incrementa `recenter_count` (PMP); el servidor DSU traduce cada flanco en un **pulso de 150 ms del botón Touch**, que el perfil mapea a `IMUIR/Recenter`. Así el mismo gesto recentra en modo puntero y en Dolphin.
 
 ## Modo
 

@@ -67,7 +67,7 @@ Si prefieres mapear a mano (o el perfil no carga): en Configure, Device =
 `DSUClient/0/PepoMote`, y asigna A=Cross, B=Circle, 1=Square, 2=Triangle,
 −=Share, +=Options, Home=PS, cruceta=`Pad N/S/W/E` (así llama Dolphin a la
 cruceta del DSU), y en Motion Input los seis `Accel *` y los seis `Gyro *` a
-sus homónimos. `IMUPointer/Recenter` = `Touch Button` (la diana del móvil
+sus homónimos. `IMUIR/Recenter` = `Touch Button` (la diana del móvil
 manda un pulso de Touch al recentrar).
 
 ## 4. Calibración de ejes (verificación de h3)

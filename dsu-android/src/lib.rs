@@ -87,7 +87,7 @@ pub extern "system" fn Java_dev_pepotech_pepomote_net_DsuServer_nativeStart<'loc
 /// sea un INPUT válido se ignora en silencio, igual que hace el receptor.
 #[no_mangle]
 pub extern "system" fn Java_dev_pepotech_pepomote_net_DsuServer_nativePush<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _this: JObject<'local>,
     packet: JByteArray<'local>,
 ) {
@@ -133,7 +133,7 @@ pub extern "system" fn Java_dev_pepotech_pepomote_net_DsuServer_nativeDsuClientI
 /// slot DSU 0, y los otros tres apagados.
 #[no_mangle]
 pub extern "system" fn Java_dev_pepotech_pepomote_net_DsuServer_nativeWiimoteIni<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _this: JObject<'local>,
 ) -> jstring {
     match env.new_string(dsu::ini::wiimote_new_ini(0)) {

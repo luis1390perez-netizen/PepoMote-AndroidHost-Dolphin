@@ -67,7 +67,7 @@ copiar el archivo. Dos maneras de que no cambie nunca:
 ## Qué funciona y qué no
 
 Este modo emula **un Mando de Wii** con movimiento y botones: acelerómetro,
-giroscopio, puntero por IMU (`IMUPointer`, con el recentrado en el botón de
+giroscopio, puntero por IMU (`IMUIR`, con el recentrado en el botón de
 apuntar) y batería. Basta para Wii Sports.
 
 Lo que **no** hay aquí, y sí en el receptor de PC: Nunchuk, jugadores 2-4 y

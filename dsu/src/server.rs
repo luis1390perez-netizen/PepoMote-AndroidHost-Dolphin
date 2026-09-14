@@ -188,7 +188,7 @@ pub fn pad_data_packet(
         DsuProfile::Wii => mapping::buttons_to_dsu(sample.buttons),
         DsuProfile::WiiU => mapping::buttons_to_dsu_wiiu(sample.buttons),
     };
-    // Botón Touch: en Wii es el pulso de recentrado (IMUPointer/Recenter);
+    // Botón Touch: en Wii es el pulso de recentrado (IMUIR/Recenter);
     // en Wii U es Home (Cemu lo lee como botón 16 e ignora el PS)
     let touch_btn = match sample.profile {
         DsuProfile::Wii => {

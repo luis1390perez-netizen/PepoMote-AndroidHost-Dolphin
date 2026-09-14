@@ -11,6 +11,15 @@ use crate::MAX_PLAYERS;
 /// Mapeo validado contra Dolphin real (h3): botones por bytes analógicos,
 /// cruceta "Pad N/S/W/E", IMU completo y recentrado por botón Touch.
 /// {DEV} = índice de pad del cliente DSU (slot).
+///
+/// El grupo del puntero por IMU se llama `IMUIR` y NO `IMUPointer` (en
+/// Dolphin la clase es IMUCursor pero el nombre que va al INI es "IMUIR":
+/// WiimoteEmu.cpp). Con el nombre equivocado Dolphin no lee nada y el grupo
+/// se queda en su valor por defecto, que en Android es APAGADO
+/// (IMUCursor.cpp lo pone Disabled bajo `#ifdef ANDROID`, Enabled fuera):
+/// en el PC no se notaba y en «Dolphin en Android» dejaba el puntero muerto.
+/// Sus únicos ajustes son `Total Yaw` y `Accelerometer Influence`; no hay
+/// `Total Pitch`.
 const MAPPING: &str = "Device = DSUClient/{DEV}/PepoMote
 Source = 1
 Buttons/A = Cross
@@ -37,10 +46,9 @@ IMUGyroscope/Roll Right = `Gyro Roll Right`
 IMUGyroscope/Yaw Left = `Gyro Yaw Left`
 IMUGyroscope/Yaw Right = `Gyro Yaw Right`
 IMUGyroscope/Dead Zone = 3.
-IMUPointer/Enabled = True
-IMUPointer/Recenter = `Touch Button`
-IMUPointer/Total Yaw = 25.000000000000000
-IMUPointer/Total Pitch = 20.000000000000000
+IMUIR/Enabled = True
+IMUIR/Recenter = `Touch Button`
+IMUIR/Total Yaw = 25.000000000000000
 Options/Battery = `Battery`
 ";
 
@@ -127,7 +135,13 @@ mod tests {
     fn wiimote_new_ini_enciende_uno_y_apaga_los_demas() {
         let ini = wiimote_new_ini(0);
         assert!(ini.starts_with("[Wiimote1]\nDevice = DSUClient/0/PepoMote\nSource = 1\n"));
-        assert!(ini.contains("IMUPointer/Recenter = `Touch Button`\n"));
+        assert!(ini.contains("IMUIR/Recenter = `Touch Button`\n"));
+        assert!(ini.contains("IMUIR/Enabled = True\n"));
+        // Dolphin llama IMUIR al grupo; con IMUPointer no lee nada y en
+        // Android el grupo nace apagado (IMUCursor.cpp, #ifdef ANDROID)
+        assert!(!ini.contains("IMUPointer"), "IMUPointer no existe en Dolphin");
+        // IMUCursor solo tiene Total Yaw y Accelerometer Influence
+        assert!(!ini.contains("Total Pitch"), "Total Pitch no existe en Dolphin");
         assert!(ini.contains("Extension = None\n"));
         for n in 2..=MAX_PLAYERS {
             assert!(ini.contains(&format!("[Wiimote{n}]\nSource = 0\n")), "falta Wiimote{n}");
