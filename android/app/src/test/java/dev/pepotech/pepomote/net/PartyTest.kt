@@ -72,6 +72,67 @@ class PartyTest {
         }
     }
 
+    /**
+     * Lo mismo, pero del lado del invitado. Sin la guarda de generación, el
+     * hilo de la conexión vieja despierta de su latido, ve `running` otra vez
+     * en true, y cierra el socket de la conexión NUEVA: el invitado se caía
+     * solo unos segundos después y el anfitrión se quedaba sin nadie.
+     */
+    @Test
+    fun elInvitadoSobreviveAParaYArrancar() {
+        val port = puertoLibre()
+        val anfitrion = PartyHost(port)
+        anfitrion.start()
+        val invitado = PartyGuest("127.0.0.1", port, "Pixel de prueba")
+        try {
+            invitado.start()
+            esperaA { invitado.player.value == 2 }
+            invitado.stop()
+            invitado.start()
+            esperaA { invitado.player.value == 2 }
+            // El hilo viejo sigue dormido en su latido: hay que darle tiempo a
+            // despertar para comprobar que no se lleva por delante esta sesión.
+            Thread.sleep(Party.PING_MS + 1_500)
+            assertEquals(2, invitado.player.value)
+            assertEquals(1, anfitrion.guests().size)
+        } finally {
+            invitado.stop()
+            anfitrion.stop()
+        }
+    }
+
+    /**
+     * Si el anfitrión se cae y vuelve, el invitado se reengancha solo. Antes
+     * no había reconexión ninguna: un corte de Wi-Fi de más de diez segundos
+     * dejaba al móvil fuera para siempre y había que reescanear el QR.
+     */
+    @Test
+    fun elInvitadoSeReenganchaSolo() {
+        val port = puertoLibre()
+        val anfitrion = PartyHost(port)
+        anfitrion.start()
+        val invitado = PartyGuest("127.0.0.1", port, "Pixel de prueba")
+        try {
+            invitado.start()
+            esperaA { invitado.player.value == 2 }
+            anfitrion.stop()
+            esperaA { invitado.player.value == null }
+
+            val vuelve = PartyHost(port)
+            vuelve.start()
+            try {
+                // Primer reintento al segundo, según la escala de Reconnect
+                esperaA(20_000) { invitado.player.value == 2 }
+                assertEquals(1, vuelve.guests().size)
+            } finally {
+                vuelve.stop()
+            }
+        } finally {
+            invitado.stop()
+            anfitrion.stop()
+        }
+    }
+
     private fun esperaA(limiteMs: Long = 5_000, cond: () -> Boolean) {
         val fin = System.currentTimeMillis() + limiteMs
         while (System.currentTimeMillis() < fin) {

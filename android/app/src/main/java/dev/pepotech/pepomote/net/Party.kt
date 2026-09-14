@@ -2,6 +2,7 @@ package dev.pepotech.pepomote.net
 
 import android.os.Build
 import dev.pepotech.pepomote.control.TextInput
+import dev.pepotech.pepomote.service.Reconnect
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.BufferedReader
@@ -39,6 +40,26 @@ object Party {
         Regex("\"n\"\\s*:\\s*(\\d+)").find(line)?.groupValues?.get(1)?.toIntOrNull()
 
     fun deviceName(): String = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
+
+    /** Tope de una línea, como el del canal de pantalla (ScreenClient). */
+    const val MAX_LINE = 4096
+}
+
+/**
+ * `readLine()` con tope. El de serie acumula sin límite: un par que mande
+ * bytes y nunca un `\n` haría crecer el buffer hasta tumbar el proceso de la
+ * app, y el `soTimeout` no protege de eso porque el flujo nunca se para.
+ * Una línea más larga que el tope es basura: se corta la conexión.
+ */
+internal fun BufferedReader.readLineCapped(): String? {
+    val sb = StringBuilder()
+    while (true) {
+        val c = read()
+        if (c < 0) return if (sb.isEmpty()) null else sb.toString()
+        if (c == '\n'.code) return sb.toString()
+        if (sb.length >= Party.MAX_LINE) return null
+        sb.append(c.toChar())
+    }
 }
 
 /**
@@ -71,6 +92,7 @@ class PartyHost(private val port: Int = Party.PORT) {
 
     fun guests(): List<PartyPlayer> = roster.guests()
 
+    @Synchronized
     fun start() {
         if (running) return
         val srv = try {
@@ -89,6 +111,13 @@ class PartyHost(private val port: Int = Party.PORT) {
                     srv.accept()
                 } catch (e: Exception) {
                     break
+                }
+                // Una conexion de mas ocupa un hilo los 10 s del timeout: un
+                // escaneo de puertos en la LAN no puede multiplicar hilos en
+                // un movil. Si ya no caben mas jugadores, se cierra y punto.
+                if (synchronized(this) { vivos.size } >= PartyRoster.MAX_PLAYERS) {
+                    runCatching { socket.close() }
+                    continue
                 }
                 val id = synchronized(this) { nextId++ }
                 thread(isDaemon = true, name = "party-guest-$id") { atiende(id, socket) }
@@ -118,7 +147,7 @@ class PartyHost(private val port: Int = Party.PORT) {
                 synchronized(this) { vivos[id] = s }
                 val reader = s.getInputStream().bufferedReader()
                 val writer = s.getOutputStream().bufferedWriter()
-                val primera = reader.readLine() ?: return
+                val primera = reader.readLineCapped() ?: return
                 if (Party.kind(primera) != "join") return
                 // IPv4 obligatorio: un ':' de IPv6 dentro de una entrada
                 // `nombre:direccion:puerto` rompería el parseo de Dolphin sin
@@ -126,7 +155,8 @@ class PartyHost(private val port: Int = Party.PORT) {
                 val addr = s.inetAddress
                 if (addr !is Inet4Address) return
                 val host = addr.hostAddress ?: return
-                val player = roster.join(id, Party.nameOf(primera) ?: "?", host, System.currentTimeMillis())
+                val nombre = (Party.nameOf(primera) ?: "?").take(64)
+                val player = roster.join(id, nombre, host, System.currentTimeMillis())
                 if (player == null) {
                     writer.write(Party.fullMessage())
                     writer.write("\n")
@@ -154,7 +184,7 @@ class PartyHost(private val port: Int = Party.PORT) {
      */
     private fun bucle(id: Long, reader: BufferedReader, writer: java.io.BufferedWriter) {
         while (running) {
-            reader.readLine() ?: return
+            reader.readLineCapped() ?: return
             val ahora = System.currentTimeMillis()
             roster.ping(id, ahora)
             val player = roster.playerOf(id) ?: return
@@ -164,6 +194,7 @@ class PartyHost(private val port: Int = Party.PORT) {
         }
     }
 
+    @Synchronized
     fun stop() {
         running = false
         try {
@@ -205,57 +236,107 @@ class PartyGuest(
     private var socket: Socket? = null
     @Volatile private var running = false
 
+    @Synchronized
     fun start() {
         if (running) return
         running = true
         _full.value = false
         thread(isDaemon = true, name = "party-guest") {
-            try {
-                val s = Socket()
-                s.connect(InetSocketAddress(host, port), 4_000)
-                // Tres latidos de margen: si el anfitrión no contesta en ese
-                // tiempo, es que ya no está.
-                s.soTimeout = (Party.PING_MS * 3).toInt()
-                socket = s
-                val reader = s.getInputStream().bufferedReader()
-                val writer = s.getOutputStream().bufferedWriter()
-                writer.write(Party.joinMessage(name))
-                writer.write("\n")
-                writer.flush()
-                val respuesta = reader.readLine() ?: return@thread
-                if (Party.errorOf(respuesta) == "party_full") {
-                    _full.value = true
-                    return@thread
+            var intento = 0
+            var desdeMs = System.currentTimeMillis()
+            while (running) {
+                val entro = sesion()
+                if (!running || _full.value) break
+                // Volver a entrar reinicia el reloj de la rendición: dos
+                // caídas separadas por media partida no son una racha.
+                if (entro) {
+                    intento = 0
+                    desdeMs = System.currentTimeMillis()
                 }
-                if (Party.kind(respuesta) != "player") return@thread
-                _player.value = Party.playerOf(respuesta)
-                while (running) {
-                    Thread.sleep(Party.PING_MS)
-                    if (!running) break
-                    writer.write(Party.pingMessage())
-                    writer.write("\n")
-                    writer.flush()
-                    // Un readLine() que devuelve null o revienta = anfitrión
-                    // caído. Sin esta lectura, el write no fallaría hasta que
-                    // TCP agotara sus reintentos (minutos) y la pantalla
-                    // seguiría diciendo que estamos en una party que ya no
-                    // existe, escondiendo los INI.
-                    val linea = reader.readLine() ?: break
-                    if (Party.kind(linea) == "player") {
-                        Party.playerOf(linea)?.let { _player.value = it }
-                    }
+                if (Reconnect.giveUp(desdeMs, System.currentTimeMillis())) break
+                intento++
+                try {
+                    Thread.sleep(Reconnect.delayMs(intento))
+                } catch (e: InterruptedException) {
+                    break
                 }
-            } catch (e: SocketTimeoutException) {
-                // el anfitrión dejó de contestar
-            } catch (e: Exception) {
-                // sin anfitrión: la pantalla ofrece escanear otra vez
-            } finally {
-                _player.value = null
-                runCatching { socket?.close() }
             }
+            // Sin esto, el hilo muere pero `running` se queda en true y
+            // cualquier start() posterior sale por el if de arriba sin hacer
+            // nada: el objeto quedaría inservible en silencio.
+            running = false
         }
     }
 
+    /**
+     * Una conexión completa: unirse y latir hasta que se caiga.
+     * @return true si llegó a estar dentro de la party.
+     */
+    private fun sesion(): Boolean {
+        val s = Socket()
+        var entro = false
+        try {
+            s.connect(InetSocketAddress(host, port), 4_000)
+            // Tres latidos de margen: si el anfitrión no contesta en ese
+            // tiempo, es que ya no está.
+            s.soTimeout = (Party.PING_MS * 3).toInt()
+            synchronized(this) {
+                if (!running) return false
+                socket = s
+            }
+            val reader = s.getInputStream().bufferedReader()
+            val writer = s.getOutputStream().bufferedWriter()
+            writer.write(Party.joinMessage(name))
+            writer.write("\n")
+            writer.flush()
+            val respuesta = reader.readLineCapped() ?: return false
+            if (Party.errorOf(respuesta) == "party_full") {
+                _full.value = true
+                return false
+            }
+            if (Party.kind(respuesta) != "player") return false
+            val mio = Party.playerOf(respuesta) ?: return false
+            _player.value = mio
+            entro = true
+            while (running) {
+                Thread.sleep(Party.PING_MS)
+                if (!running) break
+                writer.write(Party.pingMessage())
+                writer.write("\n")
+                writer.flush()
+                // Un readLine() que devuelve null o revienta = anfitrión
+                // caído. Sin esta lectura, el write no fallaría hasta que
+                // TCP agotara sus reintentos (minutos) y la pantalla
+                // seguiría diciendo que estamos en una party que ya no
+                // existe, escondiendo los INI.
+                val linea = reader.readLineCapped() ?: break
+                // Solo se hace caso a un `player` bien formado: uno roto
+                // dejaría al móvil conectado diciendo que no está en ninguna
+                // party.
+                if (Party.kind(linea) == "player") {
+                    Party.playerOf(linea)?.let { _player.value = it }
+                }
+            }
+        } catch (e: SocketTimeoutException) {
+            // el anfitrión dejó de contestar
+        } catch (e: Exception) {
+            // sin anfitrión: se reintenta, y la pantalla ofrece escanear
+        } finally {
+            runCatching { s.close() }
+            // Solo se limpia si este socket SIGUE siendo el nuestro: un
+            // stop()+start() pudo dejar aquí el de la generación siguiente, y
+            // cerrarlo mataría la conexión recién hecha.
+            synchronized(this) {
+                if (socket === s) {
+                    socket = null
+                    _player.value = null
+                }
+            }
+        }
+        return entro
+    }
+
+    @Synchronized
     fun stop() {
         running = false
         try {
