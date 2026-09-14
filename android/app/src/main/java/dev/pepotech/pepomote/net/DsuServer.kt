@@ -44,7 +44,11 @@ object DsuServer {
      * Abre el puerto si no estaba abierto. `0.0.0.0` y no el loopback: quien
      * tiene que llegar es un Dolphin de otro dispositivo.
      *
-     * @return null si está sirviendo; si no, el error, ya en texto.
+     * @return null si está sirviendo; si no, el error, ya en texto. Aquí sí
+     * vale `MISSING_LIB`: el contrato de esta función es devolver un mensaje
+     * de error para que la pantalla lo enseñe como motivo del fallo, a
+     * diferencia de `dsuClientIni`/`wiimoteIni`, que devuelven el contenido
+     * de un fichero.
      */
     fun start(port: Int = PORT): String? =
         if (available) nativeStart("0.0.0.0", port) else MISSING_LIB
@@ -64,17 +68,23 @@ object DsuServer {
      * El DSUClient.ini con un servidor por móvil de la party, en orden de
      * jugador: el primero es el anfitrión. Los nombres (`PepoMote-P1`…) los
      * pone el lado Rust, que es también quien escribe el WiimoteNew.ini.
+     *
+     * Sin librería devuelve "" y no `MISSING_LIB`: esto es el CONTENIDO de un
+     * fichero que la pantalla pinta tal cual y que Compartir vuelca dentro de
+     * un `DSUClient.ini` real para que el usuario lo copie a Dolphin. Colar
+     * ahí un mensaje de error en español lo dejaría haciéndose pasar por
+     * configuración válida.
      */
     fun dsuClientIni(hosts: List<String>): String =
         if (available && hosts.isNotEmpty()) {
-            nativeDsuClientIni(hosts.joinToString(","), PORT) ?: MISSING_LIB
+            nativeDsuClientIni(hosts.joinToString(","), PORT).orEmpty()
         } else {
-            MISSING_LIB
+            ""
         }
 
-    /** El WiimoteNew.ini con un mando por jugador de la party. */
+    /** El WiimoteNew.ini con un mando por jugador de la party. Mismo motivo que `dsuClientIni`. */
     fun wiimoteIni(players: Int): String =
-        if (available) nativeWiimoteIni(players.coerceAtLeast(1)) ?: MISSING_LIB else MISSING_LIB
+        if (available) nativeWiimoteIni(players.coerceAtLeast(1)).orEmpty() else ""
 
     private const val MISSING_LIB =
         "Esta compilación no lleva el servidor DSU nativo (falta libpepomote_dsu.so)"
