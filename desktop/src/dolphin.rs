@@ -567,7 +567,8 @@ pub fn write_wiimotes(cfg_dir: &Path, layout: &Layout) -> Result<(), String> {
     let mut ini = parse_ini(&original);
     let n = layout.len().min(crate::net::MAX_PLAYERS);
     for (i, (wslot, nslot)) in layout.iter().take(n).enumerate() {
-        let mut body: Vec<String> = ini::wiimote_mapping(*wslot).lines().map(|l| l.to_owned()).collect();
+        let device = format!("DSUClient/{wslot}/PepoMote");
+        let mut body: Vec<String> = ini::wiimote_mapping(&device).lines().map(|l| l.to_owned()).collect();
         match nslot {
             Some(ns) => body.extend(ini::nunchuk_mapping(*ns).lines().map(|l| l.to_owned())),
             None => body.push("Extension = None".to_owned()),
@@ -618,7 +619,7 @@ pub fn ensure_dsu_server(cfg_dir: &Path) -> Result<(), String> {
         }
     }
     // Dolphin corre en esta máquina: el servidor está en el loopback
-    let entry = ini::dsu_entry("127.0.0.1", dsu_server::DSU_PORT);
+    let entry = ini::dsu_entry("PepoMote", "127.0.0.1", dsu_server::DSU_PORT);
     if !entries.contains(&entry) {
         if !entries.is_empty() && !entries.ends_with(';') {
             entries.push(';');
@@ -642,7 +643,8 @@ fn write_profiles(cfg_dir: &Path, n_players: usize) {
         return;
     }
     for slot in 0..n_players.min(crate::net::MAX_PLAYERS) {
-        let body: String = ini::wiimote_mapping(slot as u8)
+        let device = format!("DSUClient/{slot}/PepoMote");
+        let body: String = ini::wiimote_mapping(&device)
             .lines()
             .filter(|l| !l.starts_with("Source"))
             .fold(String::from("[Profile]\n"), |mut acc, l| {
