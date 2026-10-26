@@ -18,6 +18,14 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
+    - name: Install Rust and cargo-ndk
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: aarch64-linux-android
+    - name: Install cargo-ndk
+      run: cargo install cargo-ndk
+
     - name: Build with Gradle
       run: |
         cd android
