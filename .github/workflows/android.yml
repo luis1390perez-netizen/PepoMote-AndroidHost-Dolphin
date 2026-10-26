@@ -23,8 +23,11 @@ jobs:
       with:
         toolchain: stable
         target: aarch64-linux-android
-    - name: Install cargo-ndk
-      run: cargo install cargo-ndk
+    
+    - name: Install cargo-ndk and target
+      run: |
+        cargo install cargo-ndk
+        rustup target add aarch64-linux-android
 
     - name: Build with Gradle
       run: |
