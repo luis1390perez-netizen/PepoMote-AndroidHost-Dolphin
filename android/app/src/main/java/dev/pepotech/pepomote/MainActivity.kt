@@ -223,6 +223,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        try {
+    startService(Intent(this, LocalDsuGamepadService::class.java))
+} catch (_: Exception) {}
+
         enableEdgeToEdge()
         UiSounds.init(this)
         if (!AppPrefs.onboarded(this)) currentScreen = Screen.Onboarding
