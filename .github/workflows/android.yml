@@ -24,7 +24,7 @@ jobs:
         toolchain: stable
         target: aarch64-linux-android
     
-    - name: Install cargo-ndk and targets
+    - name: Install cargo-ndk and mobile targets
       run: |
         cargo install cargo-ndk
         rustup target add aarch64-linux-android
