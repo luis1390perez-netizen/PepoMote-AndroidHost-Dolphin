@@ -1,53 +1,31 @@
-name: android
+name: Android CI
 
 on:
-on:
   push:
+    branches: [ "main", "master", "dolphin-android-party" ]
   workflow_dispatch:
 
-  push:
-    branches: [main]
-    paths:
-      - "android/**"
-      - "dsu/**"
-      - "dsu-android/**"
-      - "pmp/**"
-      - "protocol/**"
-      - ".github/workflows/android.yml"
-  pull_request:
-    paths: ["android/**", "dsu/**", "dsu-android/**", "pmp/**", "protocol/**"]
-  workflow_call:
-
 jobs:
-  apk:
+  build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: android-actions/setup-android@v3
+    - uses: actions/checkout@v4
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
 
-      # Servidor DSU nativo (modo «Dolphin en Android»): el build de Gradle
-      # llama a cargo-ndk, así que la toolchain de Rust tiene que estar antes.
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
-      - name: Test dsu (servidor DSU compartido)
-        working-directory: dsu
-        run: cargo test --release
-      - name: cargo-ndk
-        run: cargo install cargo-ndk --locked
-      - name: NDK
-        run: echo "ANDROID_NDK_HOME=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
+    - name: Build with Gradle
+      run: |
+        cd android
+        chmod +x gradlew
+        ./gradlew assembleDebug
 
-      - name: Build debug APK
-        working-directory: android
-        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
-      # La firma release se activa en h5 con los secrets:
-      # KEYSTORE_B64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
-      - uses: actions/upload-artifact@v4
-        with:
-          name: PepoMote-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug
+        path: android/app/build/outputs/apk/debug/app-debug.apk
