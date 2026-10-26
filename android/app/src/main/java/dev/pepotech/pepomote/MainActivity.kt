@@ -223,18 +223,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-                try {
+                        try {
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 try {
                     val intent = Intent(this, LocalDsuGamepadService::class.java)
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        startForegroundService(intent)
-                    } else {
-                        startService(intent)
-                    }
+                    startService(intent) // Arranque seguro en segundo plano estándar
                 } catch (_: Exception) {}
-            }, 1500) // Arranca a los 1.5 segundos de abrir la app, ya con la interfaz lista
+            }, 1500)
         } catch (_: Exception) {}
+
 
 
         enableEdgeToEdge()
