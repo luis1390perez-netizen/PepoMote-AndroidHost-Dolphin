@@ -223,9 +223,19 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        try {
-    startService(Intent(this, LocalDsuGamepadService::class.java))
-} catch (_: Exception) {}
+                try {
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                try {
+                    val intent = Intent(this, LocalDsuGamepadService::class.java)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        startForegroundService(intent)
+                    } else {
+                        startService(intent)
+                    }
+                } catch (_: Exception) {}
+            }, 1500) // Arranca a los 1.5 segundos de abrir la app, ya con la interfaz lista
+        } catch (_: Exception) {}
+
 
         enableEdgeToEdge()
         UiSounds.init(this)
