@@ -57,39 +57,58 @@ class LocalDsuGamepadService : Service(), SensorEventListener {
 
     override fun onCreate() {
         super.onCreate()
-        startForegroundWithNotification()
-        attachControllerSensors()
+        showSafeNotification()
+        try {
+            attachControllerSensors()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         startDsuUdpServer()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        attachControllerSensors()
+        try {
+            attachControllerSensors()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        startDsuUdpServer()
         return START_STICKY
     }
 
-    private fun startForegroundWithNotification() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val chan = NotificationChannel(
-                CHANNEL_ID,
-                "PepoMote Puente DSU Local (127.0.0.1)",
-                NotificationManager.IMPORTANCE_LOW
-            )
+    private fun showSafeNotification() {
+        try {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.createNotificationChannel(chan)
-        }
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-        }
-        val notification = builder
-            .setContentTitle("PepoMote DSU Activo (127.0.0.1:26760)")
-            .setContentText("Giroscopio del mando G6 conectado a Dolphin")
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-            .build()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val chan = NotificationChannel(
+                    CHANNEL_ID,
+                    "PepoMote Puente DSU Local (127.0.0.1)",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+                nm.createNotificationChannel(chan)
+            }
+            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Notification.Builder(this, CHANNEL_ID)
+            } else {
+                @Suppress("DEPRECATION")
+                Notification.Builder(this)
+            }
+            val notification = builder
+                .setContentTitle("PepoMote DSU Activo (127.0.0.1:26760)")
+                .setContentText("Giroscopio del mando G6 conectado a Dolphin")
+                .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+                .setOngoing(true)
+                .build()
 
-        startForeground(1001, notification)
+            // Intentamos foreground solo si el sistema lo permite; si no, usamos notificación segura sin cerrar la app
+            try {
+                startForeground(1001, notification)
+            } catch (_: Throwable) {
+                nm.notify(1001, notification)
+            }
+        } catch (_: Throwable) {
+            // Blindaje total: si las notificaciones están bloqueadas en Android 13+, no cerramos la app
+        }
     }
 
     fun attachControllerSensors() {
@@ -100,7 +119,9 @@ class LocalDsuGamepadService : Service(), SensorEventListener {
                 val dev = InputDevice.getDevice(id) ?: continue
                 if (dev.name.contains("Wireless Controller", ignoreCase = true) ||
                     dev.name.contains("Touchpad", ignoreCase = true) ||
-                    dev.name.contains("Pro Controller", ignoreCase = true)
+                    dev.name.contains("Pro Controller", ignoreCase = true) ||
+                    dev.name.contains("G6", ignoreCase = true) ||
+                    dev.name.contains("Gamepad", ignoreCase = true)
                 ) {
                     val sm = dev.sensorManager
                     val gyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
@@ -118,7 +139,7 @@ class LocalDsuGamepadService : Service(), SensorEventListener {
         }
 
         if (!foundExternal) {
-            val sysSm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+            val sysSm = getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return
             activeSensorManager?.unregisterListener(this)
             activeSensorManager = sysSm
             sysSm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let {
@@ -155,7 +176,9 @@ class LocalDsuGamepadService : Service(), SensorEventListener {
         running = true
         thread(start = true, name = "PepoMote-LocalDSU") {
             try {
-                val socket = DatagramSocket(DSU_PORT, InetAddress.getByName("127.0.0.1"))
+                val socket = DatagramSocket(null)
+                socket.reuseAddress = true
+                socket.bind(java.net.InetSocketAddress(InetAddress.getByName("127.0.0.1"), DSU_PORT))
                 socket.soTimeout = 2000
                 udpSocket = socket
 
@@ -173,7 +196,9 @@ class LocalDsuGamepadService : Service(), SensorEventListener {
                                 socket.send(DatagramPacket(dataPacket, dataPacket.size, addr, clientPort))
                             } catch (_: Exception) {}
                         }
-                        Thread.sleep(10)
+                        try {
+                            Thread.sleep(10)
+                        } catch (_: Exception) {}
                     }
                 }
 
@@ -206,6 +231,7 @@ class LocalDsuGamepadService : Service(), SensorEventListener {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                running = false
             }
         }
     }
@@ -276,11 +302,14 @@ class LocalDsuGamepadService : Service(), SensorEventListener {
 
     override fun onDestroy() {
         running = false
-        udpSocket?.close()
-        activeSensorManager?.unregisterListener(this)
+        try {
+            udpSocket?.close()
+        } catch (_: Exception) {}
+        try {
+            activeSensorManager?.unregisterListener(this)
+        } catch (_: Exception) {}
         super.onDestroy()
     }
 
-    
     override fun onBind(intent: Intent?): IBinder? = null
 }
