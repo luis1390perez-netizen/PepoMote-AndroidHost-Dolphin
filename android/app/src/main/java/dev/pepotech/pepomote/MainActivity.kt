@@ -220,14 +220,14 @@ class MainActivity : ComponentActivity() {
         recreate()
     }
 
-            try {
+                    try {
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 try {
-                    val intent = Intent(this, LocalDsuGamepadService::class.java)
-                    startService(intent) // Arranque seguro en segundo plano estándar
+                    DsuForegroundService.start(this)
                 } catch (_: Exception) {}
             }, 1500)
         } catch (_: Exception) {}
+
 
 
 
