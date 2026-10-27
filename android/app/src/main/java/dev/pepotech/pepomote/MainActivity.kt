@@ -220,10 +220,7 @@ class MainActivity : ComponentActivity() {
         recreate()
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
-        super.onCreate(savedInstanceState)
-                        try {
+            try {
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 try {
                     val intent = Intent(this, LocalDsuGamepadService::class.java)
@@ -231,6 +228,7 @@ class MainActivity : ComponentActivity() {
                 } catch (_: Exception) {}
             }, 1500)
         } catch (_: Exception) {}
+
 
 
 
