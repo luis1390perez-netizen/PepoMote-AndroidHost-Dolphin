@@ -338,3 +338,145 @@ private fun Root(activity: MainActivity) {
                     is UiLink.Reconnecting -> HomeStatus(HomeTone.Busy, stringResource(R.string.status_reconnecting, l.pcName))
                     else -> HomeStatus(
                         HomeTone.Off,
+                                               if (pcName != null) stringResource(R.string.status_disconnected_pc, pcName)
+                        else stringResource(R.string.status_disconnected)
+                    )
+                )
+            }
+            HomeScreen(
+                status = status,
+                langLabel = LocaleHelper.activeCode(context).uppercase(),
+                langSwitchHint = stringResource(R.string.lang_switch_to, LocaleHelper.name(LocaleHelper.otherCode(context))),
+                onToggleLang = { activity.toggleLanguage() },
+                onConnect = { activity.openController(LinkState.MODE_POINTER, dolphinOnly = false) },
+                onController = { activity.openPad() },
+                onDolphin = { activity.openController(LinkState.MODE_DOLPHIN, dolphinOnly = true) },
+                onWiiU = { activity.openController(LinkState.MODE_CEMU, dolphinOnly = false) },
+                onNunchuk = { activity.openNunchuk() },
+                onDsu = { activity.currentScreen = Screen.DolphinAndroid },
+                onNewPairing = { activity.currentScreen = Screen.Settings }
+            )
+        }
+
+        Screen.DolphinAndroid -> DolphinAndroidScreen(
+            onPlay = {
+                activity.controllerDolphinOnly = true
+                activity.currentScreen = Screen.DsuController
+            },
+            onStart = { DsuForegroundService.start(context) },
+            onStop = { DsuForegroundService.stop(context) },
+            onBack = { activity.currentScreen = Screen.Home },
+            onJoin = { scanQr() }
+        )
+
+        Screen.DsuController -> DsuControllerRoute(activity)
+
+        Screen.Pair -> {
+            val saved = remember(activity.pairVersion) { PairStore.all(context) }
+            val current = remember(activity.pairVersion) { PairStore.current(context)?.token }
+            PairScreen(
+                reason = activity.pairReason,
+                onScanQr = { scanQr() },
+                onBack = {
+                    LinkState.pendingMode = null
+                    activity.currentScreen = Screen.Home
+                },
+                saved = saved,
+                currentToken = current,
+                onChoose = { activity.onSavedPcChosen(it) },
+                onForget = { activity.onForgetPc(it) }
+            )
+        }
+
+        Screen.Settings -> SettingsScreen(
+            onNewPairing = {
+                activity.linkRole = LinkState.ROLE_WIIMOTE
+                LinkState.pendingMode = null
+                activity.openPair()
+            },
+            onBack = { activity.currentScreen = Screen.Home }
+        )
+
+        Screen.Nunchuk -> {
+            NunchukScreen(
+                link = link,
+                onDisconnect = {
+                    LinkForegroundService.stop(context)
+                    activity.currentScreen = Screen.Home
+                }
+            )
+        }
+
+        Screen.Controller -> ControllerRoute(activity, link)
+    }
+}
+}
+
+private fun screenDepth(s: Screen): Int = if (s == Screen.Home || s == Screen.Onboarding) 0 else 1
+
+private fun screenTransition(from: Screen, to: Screen): ContentTransform {
+    val forward = screenDepth(to) >= screenDepth(from)
+    val enter = fadeIn(tween(180)) + slideInHorizontally(tween(180)) { w -> if (forward) w / 12 else -w / 12 }
+    val exit = fadeOut(tween(120)) + slideOutHorizontally(tween(120)) { w -> if (forward) -w / 12 else w / 12 }
+    return enter togetherWith exit
+}
+
+@Composable
+private fun DsuControllerRoute(activity: MainActivity) {
+    val context = LocalContext.current
+    val state by DsuState.flow.collectAsState()
+    val serving = state as? DsuState.Ui.Serving
+
+    val link = UiLink.Connected(
+        pcName = serving?.ip ?: stringResource(R.string.dsu_card_title),
+        mode = LinkState.MODE_DOLPHIN,
+        rttMs = null,
+        sensorHz = 0f,
+        slot = 0,
+        role = LinkState.ROLE_WIIMOTE,
+        player = 1,
+        supportsCemu = false,
+        pad = LinkState.PAD_WIIMOTE
+    )
+
+    val onDisconnect = {
+        DsuForegroundService.stop(context)
+        activity.currentScreen = Screen.DolphinAndroid
+    }
+
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    if (landscape) {
+        ControllerLandscapeScreen(link = link, showChips = false, onDisconnect = onDisconnect)
+    } else {
+        ControllerScreen(link = link, showChips = false, onDisconnect = onDisconnect)
+    }
+}
+
+@Composable
+private fun ControllerRoute(activity: MainActivity, link: UiLink) {
+    val context = LocalContext.current
+    val intent by LinkState.intent.collectAsState()
+
+    val onDisconnect = {
+        LinkState.clearIntent()
+        LinkForegroundService.stop(context)
+        activity.currentScreen = Screen.Home
+    }
+
+    when (Route.route(link, intent)) {
+        PadScreen.GamePad -> GamePadScreen(link = link, onDisconnect = onDisconnect)
+
+        PadScreen.Nunchuk -> NunchukScreen(link = link, onDisconnect = onDisconnect)
+
+        PadScreen.Wii -> {
+            val landscape =
+                LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val showChips = !activity.controllerDolphinOnly && AppPrefs.showDolphinChips(context)
+            if (landscape) {
+                ControllerLandscapeScreen(link = link, showChips = showChips, onDisconnect = onDisconnect)
+            } else {
+                ControllerScreen(link = link, showChips = showChips, onDisconnect = onDisconnect)
+            }
+        }
+    }
+}
