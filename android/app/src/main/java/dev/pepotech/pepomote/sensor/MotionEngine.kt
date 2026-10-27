@@ -6,9 +6,11 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.Surface
 import dev.pepotech.pepomote.control.ButtonState
 import dev.pepotech.pepomote.net.PmpCodec
@@ -40,24 +42,16 @@ class MotionEngine(
     private val onPacket: (ByteArray) -> Unit
 ) : SensorEventListener {
 
-    /**
-     * Qué se emula. El servicio lo fija al conectar (Wiimote o Nunchuk según
-     * el rol); la pantalla GamePad lo pone en GAMEPAD al entrar y lo restaura
-     * al salir (y con él vuelven los paquetes de 72 bytes).
-     */
     @Volatile
     var kind: SenderKind = kind
 
-    /**
-     * Rotación de la pantalla (`Surface.ROTATION_*`) mientras se es GamePad:
-     * decide el remapeo de los sensores (contrato §4). La fija la pantalla
-     * GamePad; en cualquier otra pantalla no se usa.
-     */
     @Volatile
     var rotation: Int = Surface.ROTATION_0
 
-    private val sensorManager =
+    private val systemSensorManager =
         context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private var activeSensorManager: SensorManager = systemSensorManager
+
     private val batteryManager =
         context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
 
@@ -68,15 +62,16 @@ class MotionEngine(
     private val gyro = FloatArray(3)
     private val accel = FloatArray(3)
 
-    // Sensores ya remapeados al marco del GamePad (sin reservar memoria por paquete)
     private val quatOut = FloatArray(4)
     private val gyroOut = FloatArray(3)
     private val accelOut = FloatArray(3)
 
+    // Amplificador x18 para que el giroscopio mueva rápido el puntero en Mario Galaxy
+    private val gyroAmplifier = 18.0f
+
     private var seq = 0
     private var hasRotationVector = false
     private var lastSendNs = 0L
-    /** Media ponderada por tiempo del gyro entre envíos (∑ω·Δt y ∑Δt). */
     private val gyroSum = FloatArray(3)
     private var gyroSumNs = 0L
     private var lastGyroNs = 0L
@@ -92,25 +87,55 @@ class MotionEngine(
 
     private val scratch = FloatArray(4)
 
+    private fun findBestSensorManager(): SensorManager {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            for (id in InputDevice.getDeviceIds()) {
+                val dev = InputDevice.getDevice(id) ?: continue
+                if (dev.name.contains("Wireless Controller", ignoreCase = true) ||
+                    dev.name.contains("Touchpad", ignoreCase = true) ||
+                    dev.name.contains("Pro Controller", ignoreCase = true) ||
+                    dev.name.contains("G6", ignoreCase = true) ||
+                    dev.name.contains("Gamepad", ignoreCase = true)
+                ) {
+                    val sm = dev.sensorManager
+                    val g = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+                    val a = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+                    if (g != null || a != null) {
+                        return sm
+                    }
+                }
+            }
+        }
+        return systemSensorManager
+    }
+
     fun start() {
-        val gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
-        val accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        val rotSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+        activeSensorManager = findBestSensorManager()
+        val gyroSensor = activeSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+            ?: systemSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        val accelSensor = activeSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+            ?: systemSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val rotSensor = activeSensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
         hasRotationVector = rotSensor != null
 
         gyroSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST, handler)
+            activeSensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME, handler)
         }
         accelSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST, handler)
+            activeSensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME, handler)
         }
         rotSensor?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_FASTEST, handler)
+            activeSensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME, handler)
         }
     }
 
     fun stop() {
-        sensorManager.unregisterListener(this)
+        try {
+            activeSensorManager.unregisterListener(this)
+        } catch (_: Exception) {}
+        try {
+            systemSensorManager.unregisterListener(this)
+        } catch (_: Exception) {}
         thread.quitSafely()
     }
 
@@ -118,7 +143,6 @@ class MotionEngine(
         when (event.sensor.type) {
             Sensor.TYPE_GAME_ROTATION_VECTOR -> {
                 SensorManager.getQuaternionFromVector(scratch, event.values)
-                // getQuaternionFromVector devuelve [w, x, y, z]
                 quat[0] = scratch[0]; quat[1] = scratch[1]
                 quat[2] = scratch[2]; quat[3] = scratch[3]
             }
@@ -131,26 +155,29 @@ class MotionEngine(
 
             Sensor.TYPE_GYROSCOPE -> {
                 trackHz(event.timestamp)
-                // Media ponderada por tiempo de las muestras entre envíos: un
-                // gyro a 400-500 Hz decimado a 250 Hz sin promediar tiraba
-                // muestras (y el receptor integra la que llega sobre todo el
-                // intervalo). Con un hueco raro se reinicia.
+                val gx = event.values[0] * gyroAmplifier
+                val gy = event.values[1] * gyroAmplifier
+                val gz = event.values[2] * gyroAmplifier
+
                 val gap = event.timestamp - lastGyroNs
                 if (lastGyroNs != 0L && gap in 1..50_000_000L) {
-                    for (i in 0..2) gyroSum[i] += event.values[i] * gap
+                    gyroSum[0] += gx * gap
+                    gyroSum[1] += gy * gap
+                    gyroSum[2] += gz * gap
                     gyroSumNs += gap
                 } else {
                     gyroSum.fill(0f); gyroSumNs = 0L
                 }
                 lastGyroNs = event.timestamp
-                // Tope de 250 Hz del protocolo: móviles con gyro a 400-500 Hz
-                // saturan el Wi-Fi y provocan ráfagas/pérdidas (cursor errático)
+
                 if (event.timestamp - lastSendNs >= 3_900_000L) {
                     lastSendNs = event.timestamp
                     if (gyroSumNs > 0L) {
                         for (i in 0..2) gyro[i] = gyroSum[i] / gyroSumNs
                     } else {
-                        for (i in 0..2) gyro[i] = event.values[i]
+                        gyro[0] = gx
+                        gyro[1] = gy
+                        gyro[2] = gz
                     }
                     gyroSum.fill(0f); gyroSumNs = 0L
                     sendPacket(event.timestamp)
@@ -164,7 +191,6 @@ class MotionEngine(
         val quatFlag = if (hasRotationVector) PmpCodec.FLAG_QUAT_VALID else 0
         val packet = when (kind) {
             SenderKind.GAMEPAD -> {
-                // Marco del mando apaisado (contrato §4) ANTES de escribir el paquete
                 val rot = rotation
                 Frame.remapQuat(quat, rot, quatOut)
                 Frame.remapGyro(gyro, rot, gyroOut)
