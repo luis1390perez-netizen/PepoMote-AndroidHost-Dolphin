@@ -329,7 +329,7 @@ private fun Root(activity: MainActivity) {
                 activity.currentScreen = Screen.Home
             })
 
-            Screen.Home -> {
+                        Screen.Home -> {
                 val l = link
                 val pcName = PairStore.load(context)?.pcName
                 val status = when (l) {
@@ -338,25 +338,25 @@ private fun Root(activity: MainActivity) {
                     is UiLink.Reconnecting -> HomeStatus(HomeTone.Busy, stringResource(R.string.status_reconnecting, l.pcName))
                     else -> HomeStatus(
                         HomeTone.Off,
-                                               if (pcName != null) stringResource(R.string.status_disconnected_pc, pcName)
+                        if (pcName != null) stringResource(R.string.status_disconnected_pc, pcName)
                         else stringResource(R.string.status_disconnected)
                     )
+                }
+                HomeScreen(
+                    status = status,
+                    langLabel = LocaleHelper.activeCode(context).uppercase(),
+                    langSwitchHint = stringResource(R.string.lang_switch_to, LocaleHelper.name(LocaleHelper.otherCode(context))),
+                    onToggleLang = { activity.toggleLanguage() },
+                    onConnect = { activity.openController(LinkState.MODE_POINTER, dolphinOnly = false) },
+                    onController = { activity.openPad() },
+                    onDolphin = { activity.openController(LinkState.MODE_DOLPHIN, dolphinOnly = true) },
+                    onWiiU = { activity.openController(LinkState.MODE_CEMU, dolphinOnly = false) },
+                    onNunchuk = { activity.openNunchuk() },
+                    onDsu = { activity.currentScreen = Screen.DolphinAndroid },
+                    onNewPairing = { activity.currentScreen = Screen.Settings }
                 )
             }
-            HomeScreen(
-                status = status,
-                langLabel = LocaleHelper.activeCode(context).uppercase(),
-                langSwitchHint = stringResource(R.string.lang_switch_to, LocaleHelper.name(LocaleHelper.otherCode(context))),
-                onToggleLang = { activity.toggleLanguage() },
-                onConnect = { activity.openController(LinkState.MODE_POINTER, dolphinOnly = false) },
-                onController = { activity.openPad() },
-                onDolphin = { activity.openController(LinkState.MODE_DOLPHIN, dolphinOnly = true) },
-                onWiiU = { activity.openController(LinkState.MODE_CEMU, dolphinOnly = false) },
-                onNunchuk = { activity.openNunchuk() },
-                onDsu = { activity.currentScreen = Screen.DolphinAndroid },
-                onNewPairing = { activity.currentScreen = Screen.Settings }
-            )
-        }
+
 
         Screen.DolphinAndroid -> DolphinAndroidScreen(
             onPlay = {
